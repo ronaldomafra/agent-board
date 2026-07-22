@@ -1,0 +1,29 @@
+project:
+  name: MediaFlow Platform
+  wip_limit: 3
+  lease_minutes: 30
+
+workflow:
+  states:
+    - BACKLOG
+    - READY
+    - ASSIGNED
+    - IN_PROGRESS
+    - VERIFYING
+    - DONE
+    - BLOCKED
+    - REWORK
+    - CANCELED
+  transitions:
+    BACKLOG: [READY, CANCELED]
+    READY: [ASSIGNED, BLOCKED, CANCELED]
+    ASSIGNED: [IN_PROGRESS, READY, BLOCKED]
+    IN_PROGRESS: [VERIFYING, BLOCKED, REWORK]
+    VERIFYING: [DONE, REWORK, BLOCKED]
+    REWORK: [IN_PROGRESS, BLOCKED, CANCELED]
+    BLOCKED: [READY, IN_PROGRESS, CANCELED]
+
+evidence:
+  require_tests_for_done: true
+  require_commit_for_done: true
+

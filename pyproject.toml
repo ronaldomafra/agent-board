@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-board"
+version = "0.1.0"
+description = "Local-first control plane for AI development agents."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Ronaldo Mafra" }]
+dependencies = [
+  "fastapi>=0.115",
+  "fastmcp>=2.0",
+  "pydantic>=2.8",
+  "uvicorn>=0.30"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.8"]
+
+[project.scripts]
+agentboard = "agentboard.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+

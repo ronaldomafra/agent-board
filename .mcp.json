@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agentboard": {
+      "command": "uvx",
+      "args": ["--from", "agent-board", "agentboard", "mcp"],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 60
+    }
+  }
+}
+
