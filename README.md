@@ -1,32 +1,32 @@
 # AgentBoard
 
-Local-first control plane for AI development agents. AgentBoard combines a Codex plugin, an MCP server, a local dashboard and SQLite-backed task orchestration.
+Control plane local-first para agentes de desenvolvimento com IA. O AgentBoard combina um plugin Codex, um servidor MCP, um dashboard local e orquestração de tasks persistida em SQLite.
 
-## Status
+## Status do projeto
 
-The repository currently contains the architectural foundation and contracts for the first vertical slice. It is intentionally not yet a published package or production-ready plugin.
+O repositório contém a fundação arquitetural e os contratos do primeiro fluxo vertical. Ele ainda não é um pacote publicado nem um plugin pronto para produção.
 
-## Goals
+## Objetivos
 
-- Coordinate development tasks across Codex agents.
-- Enforce dependencies, WIP limits, task leases and valid state transitions.
-- Keep configuration in Git and operational history in local SQLite.
-- Expose the same domain rules through MCP tools and a local web dashboard.
-- Keep all runtime services bound to localhost and alive only while Codex is active in the MVP.
+- Coordenar tasks de desenvolvimento entre agentes Codex.
+- Aplicar dependências, limites de WIP, leases de tasks e transições de estado válidas.
+- Manter a configuração no Git e o histórico operacional em SQLite local.
+- Expor as mesmas regras de domínio por tools MCP e por um dashboard web local.
+- Manter os serviços em `localhost` e ativos somente enquanto o Codex estiver em execução no MVP.
 
-## Repository map
+## Estrutura do repositório
 
-| Path | Purpose |
+| Caminho | Finalidade |
 | --- | --- |
-| `src/agentboard/` | Python domain, storage, service, MCP and web adapters |
-| `web/` | React/Vite dashboard source |
-| `skills/` | Codex workflow for task orchestration |
-| `.codex/agents/` | Project-scoped agent profiles |
-| `config/` | Versioned orchestration examples |
-| `docs/` | Architecture and development guidance |
-| `tests/` | Domain and adapter tests |
+| `src/agentboard/` | Domínio Python, persistência, serviços e adapters MCP/web |
+| `web/` | Código-fonte do dashboard React/Vite |
+| `skills/` | Fluxo Codex para orquestração de tasks |
+| `.codex/agents/` | Perfis de agentes específicos do projeto |
+| `config/` | Exemplos versionados de configuração de orquestração |
+| `docs/` | Arquitetura e documentação de desenvolvimento |
+| `tests/` | Testes do domínio e dos adapters |
 
-## Development
+## Desenvolvimento
 
 ```bash
 uv sync --all-groups
@@ -35,9 +35,8 @@ uv run ruff check .
 uv run agentboard --help
 ```
 
-Read [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) before implementing a feature. Codex-specific rules are in [AGENTS.md](AGENTS.md).
+Leia o [guia de desenvolvimento](DEVELOPMENT_GUIDE.md) antes de implementar uma funcionalidade. As regras específicas para o Codex estão em [AGENTS.md](AGENTS.md).
 
-## License
+## Licença
 
 Apache-2.0
-
