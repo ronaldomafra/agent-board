@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orchestra — Controle de agentes</title>
+  <style>
+    :root {
+      --bg: #100b08;
+      --bg-elevated: #18100d;
+      --panel: #211612;
+      --panel-hover: #2a1b16;
+      --line: #432a20;
+      --line-strong: #5d3928;
+      --text: #fff8f3;
+      --muted: #bba69b;
+      --orange: #ff7a1a;
+      --orange-soft: #ffab62;
+      --orange-dim: rgba(255, 122, 26, .14);
+      --green: #54d6a0;
+      --yellow: #ffc34d;
+      --red: #ff6878;
+      --blue: #77a7ff;
+      --radius: 16px;
+      --shadow: 0 20px 52px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: radial-gradient(circle at 87% -20%, rgba(255,122,26,.17), transparent 32rem), var(--bg); color: var(--text); font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--orange-soft); outline-offset: 2px; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 244px minmax(0, 1fr); }
+    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 22px 14px; background: rgba(19, 12, 9, .88); border-right: 1px solid var(--line); backdrop-filter: blur(18px); }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 24px; font-weight: 850; font-size: 18px; letter-spacing: -.04em; }
+    .brand-mark { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 10px; background: linear-gradient(145deg, #ff9d54, #eb5810); color: #281006; box-shadow: 0 8px 22px rgba(255, 102, 23, .25); }
+    .brand small { display:block; margin-top: 1px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .project { margin: 0 4px 20px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(135deg, rgba(255,122,26,.13), rgba(255,122,26,.02)); }
+    .project-label, .eyebrow { color: var(--orange-soft); font-size: 10px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+    .project-name { margin-top: 3px; font-weight: 750; }
+    .project-meta { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    nav { display: grid; gap: 3px; }
+    .nav-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 11px; color: var(--muted); border: 0; border-radius: 10px; background: transparent; text-align: left; font-weight: 650; }
+    .nav-item:hover { color: var(--text); background: var(--panel); }
+    .nav-item.active { color: var(--text); background: var(--orange-dim); box-shadow: inset 2px 0 0 var(--orange); }
+    .nav-icon { width: 19px; color: var(--orange-soft); font-size: 16px; text-align: center; }
+    .nav-count { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 99px; background: #3b241a; color: var(--orange-soft); font-size: 11px; text-align: center; }
+    .sidebar-bottom { margin-top: auto; padding: 13px 10px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .live { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-weight: 750; }
+    .live::before { width: 7px; height: 7px; border-radius: 99px; background: var(--green); box-shadow: 0 0 0 4px rgba(84,214,160,.1); content: ""; }
+    main { min-width: 0; padding: 28px clamp(18px, 3vw, 46px) 42px; }
+    .topbar { display:flex; align-items:flex-start; justify-content:space-between; gap: 18px; margin-bottom: 26px; }
+    h1 { margin: 4px 0 0; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.055em; line-height: 1; }
+    .page-description { margin: 8px 0 0; color: var(--muted); }
+    .top-actions { display:flex; flex-wrap: wrap; align-items:center; justify-content:end; gap: 9px; }
+    .btn { padding: 9px 13px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel); color: var(--text); font-weight: 750; }
+    .btn:hover { border-color: var(--orange); background: var(--panel-hover); }
+    .btn.primary { border-color: var(--orange); background: var(--orange); color: #2c0e00; }
+    .btn.primary:hover { background: #ff9345; }
+    .view { display: none; animation: appear .22s ease; }
+    .view.active { display: block; }
+    @keyframes appear { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+    .metric-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .metric, .panel { border: 1px solid var(--line); border-radius: var(--radius); background: rgba(32,21,17,.84); box-shadow: var(--shadow); }
+    .metric { padding: 15px; }
+    .metric-label { color: var(--muted); font-size: 12px; font-weight: 650; }
+    .metric-value { margin-top: 5px; font-size: 27px; font-weight: 850; letter-spacing: -.055em; }
+    .metric-detail { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .metric .orange { color: var(--orange-soft); } .metric .green { color: var(--green); } .metric .yellow { color: var(--yellow); }
+    .board-tools { display:flex; flex-wrap:wrap; justify-content:space-between; gap: 12px; margin-bottom: 14px; }
+    .filters { display:flex; flex-wrap:wrap; gap: 8px; }
+    .search, select { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); }
+    .search { min-width: 230px; }
+    .kanban { display:grid; grid-template-columns: repeat(5, minmax(225px, 1fr)); gap: 12px; overflow-x:auto; padding-bottom: 14px; }
+    .column { min-height: 505px; padding: 10px; border: 1px solid var(--line); border-radius: 13px; background: rgba(19, 12, 10, .56); }
+    .column-header { display:flex; align-items:center; justify-content:space-between; padding: 4px 4px 12px; }
+    .column-title { display:flex; align-items:center; gap: 8px; font-weight: 800; }
+    .dot { width: 8px; height:8px; border-radius:50%; background: var(--orange); } .dot.ready { background: var(--blue); } .dot.progress { background: var(--yellow); } .dot.verify { background: #b488ff; } .dot.done { background: var(--green); }
+    .column-count { padding: 1px 7px; border-radius: 99px; background: #35231b; color: var(--muted); font-size: 11px; font-weight: 750; }
+    .card { position:relative; margin-bottom: 9px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: linear-gradient(145deg, #291a15, #211511); transition: .16s ease; }
+    .card:hover, .card.selected { transform: translateY(-2px); border-color: #a65327; background: #302019; }
+    .card.dragging { opacity: .4; }
+    .card-id { color: var(--orange-soft); font-size: 10px; font-weight: 850; letter-spacing: .07em; }
+    .card h3 { margin: 5px 0 10px; font-size: 13px; line-height: 1.32; }
+    .tags { display:flex; flex-wrap:wrap; gap: 5px; }
+    .tag { padding: 3px 6px; border-radius: 5px; background: #3b281f; color: var(--muted); font-size: 10px; font-weight: 750; }
+    .tag.risk { background: rgba(255,104,120,.13); color: #ff9ba6; } .tag.review { background: rgba(180,136,255,.14); color:#d4bcff; }
+    .card-footer { display:flex; align-items:center; justify-content:space-between; margin-top: 12px; color: var(--muted); font-size: 11px; }
+    .avatar { display:grid; width:22px; height:22px; place-items:center; border: 1px solid #623a29; border-radius: 50%; background:#3a251c; color:var(--orange-soft); font-size:9px; font-weight:850; }
+    .avatars { display:flex; } .avatars .avatar + .avatar { margin-left:-5px; }
+    .progress { height: 5px; overflow:hidden; margin-top: 10px; border-radius:99px; background:#140c09; } .progress span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--orange),var(--orange-soft)); }
+    .section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 13px; }
+    .section-head h2 { margin:0; font-size:16px; letter-spacing:-.025em; }
+    .table-wrap { overflow:auto; }
+    table { width:100%; border-collapse:collapse; min-width:720px; } th { padding: 0 14px 11px; color:var(--muted); font-size:11px; text-align:left; text-transform:uppercase; letter-spacing:.07em; } td { padding: 13px 14px; border-top:1px solid var(--line); } tr:hover td { background:rgba(255,122,26,.035); }
+    .status { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; border-radius:6px; background:#35241b; color:var(--muted); font-size:10px; font-weight:850; letter-spacing:.04em; } .status.running { color:#ffe29a; background:rgba(255,195,77,.12); } .status.ready { color:#a9c6ff; background:rgba(119,167,255,.12); } .status.blocked { color:#ffabb4; background:rgba(255,104,120,.12); } .status.done { color:#8df0c4; background:rgba(84,214,160,.12); }
+    .agent-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .agent { padding:17px; } .agent-top { display:flex; align-items:center; gap:10px; } .agent-avatar { display:grid; width:40px; height:40px; place-items:center; border-radius:12px; background:var(--orange-dim); color:var(--orange-soft); font-weight:900; } .agent h3 { margin:0; font-size:14px; } .agent p { margin:3px 0 0; color:var(--muted); font-size:12px; } .agent-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; } .agent-stat { padding:9px; border-radius:9px; background:#19100d; } .agent-stat b { display:block; font-size:15px; } .agent-stat span { color:var(--muted); font-size:10px; }
+    .timeline { padding: 4px 0; } .event { display:grid; grid-template-columns:20px minmax(0,1fr) auto; gap:10px; padding:13px 0; border-bottom:1px solid var(--line); } .event:last-child { border:0; } .event-icon { display:grid; width:20px; height:20px; place-items:center; border-radius:50%; background:var(--orange-dim); color:var(--orange-soft); font-size:10px; } .event b { font-size:13px; } .event p { margin:2px 0 0; color:var(--muted); font-size:12px; } .event time { color:var(--muted); font-size:11px; white-space:nowrap; }
+    .settings { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr); gap:15px; } .settings .panel { padding:19px; } label { display:grid; gap:6px; margin-bottom:13px; color:var(--muted); font-size:12px; font-weight:650; } input[type="text"], input[type="number"] { height:39px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:#160e0b; color:var(--text); } .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:12px 0; border-top:1px solid var(--line); } .toggle-row:first-of-type { border-top:0; } .toggle { position:relative; width:39px; height:22px; flex:0 0 auto; border:0; border-radius:99px; background:#4b2d20; } .toggle.on { background:var(--orange); } .toggle::after { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:white; content:""; transition:.18s; } .toggle.on::after { left:20px; }
+    .drawer { position:fixed; z-index:5; top:0; right:-430px; width:min(410px,100vw); height:100vh; padding:22px; border-left:1px solid var(--line-strong); background:#1a100d; box-shadow:-25px 0 55px rgba(0,0,0,.3); transition:right .25s ease; overflow:auto; } .drawer.open { right:0; } .drawer-close { float:right; width:32px; height:32px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--text); } .drawer h2 { margin:5px 35px 8px 0; letter-spacing:-.04em; } .drawer p { color:var(--muted); } .detail-block { margin-top:20px; padding-top:17px; border-top:1px solid var(--line); } .detail-block h3 { margin:0 0 9px; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; } .check { display:flex; gap:9px; padding:7px 0; color:#e6d5ca; font-size:12px; } .check::before { color:var(--green); content:"✓"; font-weight:900; }
+    .toast { position:fixed; z-index:7; right:24px; bottom:24px; padding:11px 14px; border:1px solid #975027; border-radius:9px; background:#30190f; color:#ffe1c9; box-shadow:var(--shadow); opacity:0; pointer-events:none; transform:translateY(10px); transition:.2s; } .toast.show { opacity:1; transform:translateY(0); }
+    @media (max-width: 940px) { .app { grid-template-columns:1fr; } .sidebar { position:sticky; z-index:3; top:0; height:auto; flex-direction:row; align-items:center; padding:11px 15px; border-right:0; border-bottom:1px solid var(--line); } .brand { padding:0; } .project, .sidebar-bottom { display:none; } nav { display:flex; margin-left:auto; overflow:auto; } .nav-item { width:auto; white-space:nowrap; } .nav-item span:not(.nav-icon):not(.nav-count) { display:none; } main { padding-top:22px; } .metric-grid { grid-template-columns:repeat(2,1fr); } .agent-grid { grid-template-columns:repeat(2,1fr); } }
+    @media (max-width: 570px) { .topbar { flex-direction:column; } .top-actions { justify-content:start; } .metric-grid, .agent-grid, .settings { grid-template-columns:1fr; } .search { min-width:0; width:100%; } .filters { width:100%; } .filters select { flex:1; } .nav-item { padding:8px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">◈</span><span>Orchestra<small>Agent control plane</small></span></div>
+      <div class="project"><div class="project-label">Projeto atual</div><div class="project-name">MediaFlow Platform</div><div class="project-meta">main · 42 tasks · WIP 2/3</div></div>
+      <nav aria-label="Navegação principal">
+        <button class="nav-item active" data-view="board"><span class="nav-icon">▦</span><span>Quadro</span></button>
+        <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span><span>Tasks</span><span class="nav-count">42</span></button>
+        <button class="nav-item" data-view="agents"><span class="nav-icon">◉</span><span>Agentes</span><span class="nav-count">4</span></button>
+        <button class="nav-item" data-view="runs"><span class="nav-icon">↻</span><span>Execuções</span></button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>Configuração</span></button>
+      </nav>
+      <div class="sidebar-bottom"><span class="live">MCP conectado</span><br><span>SQLite local · 17 eventos agora</span></div>
+    </aside>
+    <main>
+      <section class="view active" id="board">
+        <div class="topbar"><div><div class="eyebrow">Projeto · visão operacional</div><h1>Quadro de execução</h1><p class="page-description">Acompanhe tasks, leases e evidências sem perder a visão do fluxo.</p></div><div class="top-actions"><button class="btn" id="openDashboard">◉ Painel ao vivo</button><button class="btn primary" id="newTask">+ Nova task</button></div></div>
+        <div class="metric-grid"><article class="metric"><div class="metric-label">Progresso do projeto</div><div class="metric-value orange">62%</div><div class="metric-detail">26 de 42 tasks concluídas</div></article><article class="metric"><div class="metric-label">Em andamento</div><div class="metric-value yellow">2 / 3</div><div class="metric-detail">Limite de WIP configurado</div></article><article class="metric"><div class="metric-label">Agentes ativos</div><div class="metric-value green">4</div><div class="metric-detail">Último heartbeat: agora</div></article><article class="metric"><div class="metric-label">Requer atenção</div><div class="metric-value" style="color:var(--red)">1</div><div class="metric-detail">Uma task bloqueada</div></article></div>
+        <div class="board-tools"><div class="filters"><input class="search" id="taskSearch" type="search" placeholder="Buscar task, agente ou módulo" /><select><option>Todos os módulos</option><option>Backend</option><option>Frontend</option><option>Infraestrutura</option></select><select><option>Todos os riscos</option><option>Com bloqueio</option><option>Sem dependência</option></select></div><button class="btn" id="refresh">↻ Atualizar</button></div>
+        <div class="kanban" id="kanban"></div>
+      </section>
+      <section class="view" id="tasks"><div class="topbar"><div><div class="eyebrow">Backlog canônico</div><h1>Tasks</h1><p class="page-description">Planejamento, prioridade, dependências e execução em uma única visão.</p></div><button class="btn primary">+ Nova task</button></div><article class="panel" style="padding:18px"><div class="section-head"><h2>42 tasks no projeto</h2><div class="filters"><input class="search" type="search" placeholder="Filtrar tasks" /><select><option>Status: todos</option><option>Em execução</option><option>Bloqueada</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Task</th><th>Estado</th><th>Responsável</th><th>Dependências</th><th>Atualização</th></tr></thead><tbody id="taskRows"></tbody></table></div></article></section>
+      <section class="view" id="agents"><div class="topbar"><div><div class="eyebrow">Fleet status</div><h1>Agentes</h1><p class="page-description">Agentes especializados, permissões e últimas atividades.</p></div><button class="btn">Gerenciar perfis</button></div><div class="agent-grid" id="agentGrid"></div></section>
+      <section class="view" id="runs"><div class="topbar"><div><div class="eyebrow">Observabilidade</div><h1>Execuções</h1><p class="page-description">Histórico auditável de ações, evidências e transições de estado.</p></div><button class="btn">Exportar eventos</button></div><article class="panel" style="padding:19px"><div class="section-head"><h2>Atividade recente</h2><span class="live">Atualizando por SSE</span></div><div class="timeline" id="timeline"></div></article></section>
+      <section class="view" id="settings"><div class="topbar"><div><div class="eyebrow">Governança do projeto</div><h1>Configuração</h1><p class="page-description">Simulação do editor versionado de orquestração.</p></div><button class="btn primary" id="saveSettings">Salvar rascunho</button></div><div class="settings"><article class="panel"><h2 style="margin-top:0">Fluxo e limites</h2><label>Arquivo de configuração<input type="text" value="orchestration.yaml" /></label><label>Limite de WIP<input type="number" value="3" min="1" max="10" /></label><label>Tempo de expiração do lease (minutos)<input type="number" value="30" min="5" /></label><div class="toggle-row"><div><b>Exigir evidência de testes</b><br><span style="color:var(--muted);font-size:12px">Antes de mover uma task para verificação.</span></div><button class="toggle on" aria-label="Alternar exigência de testes"></button></div><div class="toggle-row"><div><b>Bloquear dependências incompletas</b><br><span style="color:var(--muted);font-size:12px">Impede claim de task ainda não liberada.</span></div><button class="toggle on" aria-label="Alternar dependências"></button></div></article><article class="panel"><h2 style="margin-top:0">Validação</h2><div class="check">YAML com sintaxe válida</div><div class="check">Estados e transições consistentes</div><div class="check">WIP permitido para o pipeline</div><div class="check">4 perfis de agentes localizados</div><div class="detail-block"><h3>Próxima aplicação</h3><p>As alterações são gravadas como rascunho e mostram um diff antes de afetar execuções ativas.</p><button class="btn" id="validateConfig">Validar configuração</button></div></article></div></section>
+    </main>
+  </div>
+  <aside class="drawer" id="drawer" aria-label="Detalhe da task"><button class="drawer-close" id="drawerClose" aria-label="Fechar">×</button><div class="eyebrow" id="drawerId">MF-G2-FE-104</div><h2 id="drawerTitle">Implementar drag-and-drop no quadro</h2><span class="status running" id="drawerStatus">EM EXECUÇÃO</span><p id="drawerDescription">Implementar a interação de movimentação de cards com validações locais de transição.</p><div class="detail-block"><h3>Responsável e lease</h3><p><b id="drawerOwner" style="color:var(--text)">frontend-worker</b><br>Renovado há 2 min · expira em 28 min</p></div><div class="detail-block"><h3>Checklist de aceite</h3><div class="check">Movimentação por teclado e mouse</div><div class="check">Validação da transição no servidor</div><div class="check">Feedback para tarefa bloqueada</div></div><div class="detail-block"><h3>Progresso informado</h3><div class="progress"><span id="drawerProgress" style="width:68%"></span></div><p id="drawerProgressText">68% · Testes de interação em andamento</p></div><div class="detail-block"><button class="btn primary" id="openRun">Ver execução vinculada</button></div></aside>
+  <div class="toast" id="toast"></div>
+  <script>
+    const columns = [
+      { id:'backlog', title:'Backlog', dot:'', cards:[['MF-G3-API-107','Criar eventos de auditoria','Backend','Sem dependência',''],['MF-G4-UI-102','Tela de comparação de configuração','Frontend','Médio','risk']] },
+      { id:'ready', title:'Prontas', dot:'ready', cards:[['MF-G2-CORE-105','Persistir lease no SQLite','Core','1 dependência',''],['MF-G2-MCP-101','Tool task_claim atômica','MCP','Prioridade alta','']] },
+      { id:'progress', title:'Em execução', dot:'progress', cards:[['MF-G2-FE-104','Implementar drag-and-drop no quadro','Frontend','68%','progress'],['MF-G2-DB-103','Regras de transição e WIP','Core','41%','progress']] },
+      { id:'verify', title:'Verificação', dot:'verify', cards:[['MF-G1-MCP-102','Heartbeat de agentes','MCP','Aguardando revisão','review']] },
+      { id:'done', title:'Concluídas', dot:'done', cards:[['MF-G1-CORE-101','Modelo de task e dependências','Core','Hoje, 10:32',''],['MF-G1-DB-101','Schema SQLite inicial','Infra','Ontem, 17:04','']] }
+    ];
+    const agents = [
+      ['root','Orquestrador','Planejamento, delegação e revisão','Em execução','6','91%'],
+      ['frontend-worker','Frontend worker','React, acessibilidade e testes visuais','Em execução','4','88%'],
+      ['core-worker','Core worker','Domínio, SQLite e regras de transição','Em execução','3','94%'],
+      ['reviewer','Reviewer','Aceite, riscos e testes de regressão','Aguardando','7','97%'],
+      ['explorer','Explorer','Leitura de código e pesquisa técnica','Disponível','11','99%'],
+      ['qa-worker','QA worker','Testes, cenários e evidências','Aguardando','8','95%']
+    ];
+    const events = [
+      ['↗','frontend-worker atualizou progresso','MF-G2-FE-104 · 68% · testes de teclado em andamento','agora'],
+      ['✓','reviewer aprovou uma task','MF-G1-MCP-102 foi movida para concluídas','há 4 min'],
+      ['!','core-worker registrou dependência','MF-G2-DB-103 aguarda contrato de eventos','há 9 min'],
+      ['◉','root iniciou uma execução','Run #482 para MF-G2-FE-104','há 13 min'],
+      ['⌁','MCP renovou um lease','frontend-worker · expira em 28 min','há 16 min']
+    ];
+    const esc = value => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[char]));
+    function renderBoard(filter='') {
+      const root = document.getElementById('kanban'); root.innerHTML = columns.map(col => {
+        const cards = col.cards.filter(card => card.join(' ').toLowerCase().includes(filter.toLowerCase()));
+        return `<section class="column" data-column="${col.id}"><div class="column-header"><div class="column-title"><span class="dot ${col.dot}"></span>${col.title}</div><span class="column-count">${cards.length}</span></div>${cards.map(card => `<article class="card" draggable="true" data-id="${card[0]}" data-title="${esc(card[1])}" data-module="${card[2]}" data-meta="${card[3]}" data-state="${col.title}"><div class="card-id">${card[0]}</div><h3>${esc(card[1])}</h3><div class="tags"><span class="tag">${card[2]}</span><span class="tag ${card[4] === 'risk' ? 'risk' : card[4] === 'review' ? 'review' : ''}">${card[3]}</span></div>${card[4] === 'progress' ? `<div class="progress"><span style="width:${card[3]}"></span></div>` : ''}<div class="card-footer"><div class="avatars"><span class="avatar">${card[2] === 'Frontend' ? 'FE' : card[2] === 'MCP' ? 'MC' : 'CO'}</span></div><span>⋮</span></div></article>`).join('')}</section>`;
+      }).join('');
+      bindCards();
+    }
+    function bindCards() {
+      document.querySelectorAll('.card').forEach(card => { card.addEventListener('click', () => openDrawer(card)); card.addEventListener('dragstart', () => card.classList.add('dragging')); card.addEventListener('dragend', () => card.classList.remove('dragging')); });
+      document.querySelectorAll('.column').forEach(column => column.addEventListener('dragover', event => event.preventDefault()));
+      document.querySelectorAll('.column').forEach(column => column.addEventListener('drop', event => { event.preventDefault(); const card = document.querySelector('.card.dragging'); if (card) { column.appendChild(card); toast('Movimentação simulada · o MCP validaria a transição.'); } }));
+    }
+    function openDrawer(card) { document.getElementById('drawerId').textContent = card.dataset.id; document.getElementById('drawerTitle').textContent = card.dataset.title; document.getElementById('drawerDescription').textContent = `Task do módulo ${card.dataset.module}. Estado atual: ${card.dataset.state}.`; document.getElementById('drawerStatus').textContent = card.dataset.state.toUpperCase(); document.getElementById('drawerOwner').textContent = card.dataset.module === 'Frontend' ? 'frontend-worker' : 'core-worker'; document.getElementById('drawer').classList.add('open'); document.querySelectorAll('.card').forEach(c => c.classList.toggle('selected', c === card)); }
+    function toast(message) { const node = document.getElementById('toast'); node.textContent = message; node.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => node.classList.remove('show'), 2500); }
+    function renderLists() {
+      const list = columns.flatMap(c => c.cards.map(card => [card, c.title]));
+      document.getElementById('taskRows').innerHTML = list.map(([c, state]) => `<tr><td><b>${c[0]}</b><br><span style="color:var(--muted);font-size:12px">${c[1]}</span></td><td><span class="status ${state === 'Em execução' ? 'running' : state === 'Prontas' ? 'ready' : state === 'Concluídas' ? 'done' : ''}">${state}</span></td><td>${c[2] === 'Frontend' ? 'frontend-worker' : c[2] === 'MCP' ? 'root' : 'core-worker'}</td><td>${c[3]}</td><td>há ${Math.ceil(Math.random()*18)} min</td></tr>`).join('');
+      document.getElementById('agentGrid').innerHTML = agents.map(a => `<article class="panel agent"><div class="agent-top"><div class="agent-avatar">${a[0].split('-').map(x=>x[0]).join('').toUpperCase()}</div><div><h3>${a[0]}</h3><p>${a[1]} · <span style="color:${a[3] === 'Em execução' ? 'var(--green)' : 'var(--muted)'}">${a[3]}</span></p></div></div><p style="margin-top:13px">${a[2]}</p><div class="agent-stats"><div class="agent-stat"><b>${a[4]}</b><span>tasks concluídas</span></div><div class="agent-stat"><b>${a[5]}</b><span>heartbeats ok</span></div></div></article>`).join('');
+      document.getElementById('timeline').innerHTML = events.map(e => `<article class="event"><span class="event-icon">${e[0]}</span><div><b>${e[1]}</b><p>${e[2]}</p></div><time>${e[3]}</time></article>`).join('');
+    }
+    document.querySelectorAll('.nav-item').forEach(button => button.addEventListener('click', () => { const view = button.dataset.view; document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n === button)); document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === view)); }));
+    document.getElementById('taskSearch').addEventListener('input', event => renderBoard(event.target.value));
+    document.getElementById('drawerClose').addEventListener('click', () => document.getElementById('drawer').classList.remove('open'));
+    document.getElementById('refresh').addEventListener('click', () => toast('Dados sincronizados com o estado local.'));
+    document.getElementById('newTask').addEventListener('click', () => toast('No produto, abriria o formulário com validação de dependências.'));
+    document.getElementById('openDashboard').addEventListener('click', () => toast('Dashboard local ativo em 127.0.0.1:43127.'));
+    document.getElementById('openRun').addEventListener('click', () => { document.querySelector('[data-view="runs"]').click(); document.getElementById('drawer').classList.remove('open'); });
+    document.getElementById('saveSettings').addEventListener('click', () => toast('Rascunho salvo. Nenhuma execução ativa foi alterada.'));
+    document.getElementById('validateConfig').addEventListener('click', () => toast('Configuração válida · 0 desvios encontrados.'));
+    document.querySelectorAll('.toggle').forEach(toggle => toggle.addEventListener('click', () => toggle.classList.toggle('on')));
+    renderBoard(); renderLists();
+  </script>
+</body>
+</html>

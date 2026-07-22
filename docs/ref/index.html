@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MediaFlow — Backlog operacional</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090d18;
+        --surface: #111827;
+        --surface-2: #172033;
+        --line: #2b3852;
+        --text: #f4f7ff;
+        --muted: #aebbd4;
+        --accent: #77a7ff;
+        --accent-2: #7ce7c1;
+        --success: #57d7a0;
+        --warning: #ffd166;
+        --danger: #ff7d91;
+        --info: #82b1ff;
+        --radius: 16px;
+        --shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(66, 104, 190, 0.18), transparent 34rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      button, input, select { font: inherit; }
+      button, input, select, a { outline-offset: 3px; }
+      :focus-visible { outline: 3px solid var(--accent); }
+      .skip-link {
+        position: absolute;
+        left: 12px;
+        top: -60px;
+        z-index: 10;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: var(--text);
+        color: var(--bg);
+      }
+      .skip-link:focus { top: 12px; }
+
+      main {
+        width: min(1240px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(17, 24, 39, 0.94);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);
+        gap: 24px;
+        padding: 26px;
+      }
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--accent-2);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: 10px; font-size: clamp(1.7rem, 4vw, 2.8rem); line-height: 1.08; }
+      h2 { margin-bottom: 14px; font-size: 1.2rem; }
+      h3 { margin-bottom: 6px; font-size: 1.05rem; }
+      .subtitle { max-width: 68ch; margin-bottom: 18px; color: var(--muted); }
+      .metadata { display: flex; flex-wrap: wrap; gap: 8px; }
+      .meta-pill, .badge, .dependency, .feature-pill, .availability {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 750;
+      }
+      .meta-pill { padding: 7px 10px; border: 1px solid var(--line); color: var(--muted); }
+
+      .next-task {
+        align-self: stretch;
+        padding: 18px;
+        border: 1px solid rgba(124, 231, 193, 0.42);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(124, 231, 193, 0.12), rgba(119, 167, 255, 0.08));
+      }
+      .next-task .sequence { color: var(--accent-2); font-weight: 800; }
+      .next-task strong { display: block; margin: 5px 0 8px; font-size: 1.02rem; }
+      .next-task p { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
+      .next-task-action {
+        width: 100%;
+        margin-top: 14px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent-2);
+        color: #071711;
+        padding: 9px 12px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .next-task-action:hover { filter: brightness(1.08); }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 10px;
+        margin: 16px 0;
+      }
+      .metric { min-width: 0; padding: 15px; }
+      button.metric {
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+      }
+      button.metric:hover { transform: translateY(-2px); border-color: var(--accent); }
+      button.metric[aria-pressed="true"] { border-color: var(--accent-2); background: rgba(124, 231, 193, 0.09); }
+      .metric-label { color: var(--muted); font-size: 0.76rem; font-weight: 700; }
+      .metric-value { margin-top: 3px; font-size: clamp(1.35rem, 3vw, 2rem); font-weight: 850; }
+      .metric-detail { margin-top: 2px; color: var(--muted); font-size: 0.72rem; }
+      .progress-track { height: 7px; margin-top: 9px; overflow: hidden; border-radius: 999px; background: #080c15; }
+      .progress-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--success), var(--accent)); }
+
+      .deviations { margin-bottom: 16px; padding: 19px; }
+      .deviation-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .deviation-header h2 { margin-bottom: 0; }
+      .deviation-ok { color: var(--success); }
+      .deviation-list { margin: 12px 0 0; padding-left: 22px; color: var(--danger); }
+      .decision-note { margin: 12px 0 0; color: var(--muted); font-size: 0.88rem; }
+
+      .filters { margin-bottom: 16px; padding: 19px; }
+      .filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .filter-heading h2 { margin-bottom: 0; }
+      .view-actions, .quick-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+      .quick-filters { margin-bottom: 14px; }
+      .quick-filter, .toolbar-button, .task-open, .dialog-action, .gate-toggle, .dependency-button {
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .quick-filter, .toolbar-button, .dialog-action {
+        border-radius: 9px;
+        padding: 8px 11px;
+        font-size: 0.8rem;
+        font-weight: 750;
+      }
+      .quick-filter:hover, .toolbar-button:hover, .dialog-action:hover, .task-open:hover { border-color: var(--accent); }
+      .quick-filter[aria-pressed="true"], .toolbar-button[aria-pressed="true"] {
+        border-color: var(--accent-2);
+        background: rgba(124, 231, 193, 0.12);
+        color: var(--accent-2);
+      }
+      .filter-grid {
+        display: grid;
+        grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(130px, 1fr));
+        gap: 12px;
+      }
+      label { display: grid; gap: 6px; color: var(--muted); font-size: 0.78rem; font-weight: 750; }
+      input, select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0b1220;
+        color: var(--text);
+        padding: 9px 11px;
+      }
+      input::placeholder { color: #7f8da8; }
+      .filter-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+      .filter-result { margin: 0; color: var(--muted); font-size: 0.86rem; }
+      .reset-button {
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-2);
+        color: var(--text);
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .reset-button:hover { border-color: var(--accent); }
+
+      .gate-section { margin-top: 16px; padding: 19px; }
+      .gate-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .gate-heading h2 { margin-bottom: 0; }
+      .gate-toggle { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 14px; padding: 0; border: 0; background: transparent; text-align: left; }
+      .gate-title { display: flex; align-items: center; gap: 10px; }
+      .gate-chevron { color: var(--accent); transition: transform 160ms ease; }
+      .gate-section[data-collapsed="true"] .gate-chevron { transform: rotate(-90deg); }
+      .gate-stats { display: flex; align-items: center; gap: 10px; }
+      .gate-count { color: var(--muted); font-size: 0.83rem; }
+      .gate-progress { width: 92px; height: 6px; overflow: hidden; border-radius: 999px; background: #080c15; }
+      .gate-progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--success), var(--accent)); }
+      .task-list { display: grid; gap: 10px; margin-top: 14px; }
+      .gate-section[data-collapsed="true"] .task-list { display: none; }
+      .task-card {
+        display: grid;
+        grid-template-columns: 58px minmax(0, 1fr) auto;
+        gap: 14px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: var(--surface-2);
+        transition: border-color 160ms ease, transform 160ms ease;
+      }
+      .task-card:hover { border-color: rgba(119, 167, 255, 0.65); }
+      .task-card[data-ready="true"] { border-color: rgba(87, 215, 160, 0.55); }
+      .task-sequence { color: var(--muted); font-size: 0.8rem; font-weight: 800; }
+      .task-id { margin-bottom: 4px; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+      .task-title { margin-bottom: 10px; }
+      .task-meta, .dependencies { display: flex; flex-wrap: wrap; gap: 7px; }
+      .feature-pill { padding: 4px 8px; background: rgba(119, 167, 255, 0.13); color: #c9dbff; }
+      .module-pill { background: rgba(174, 187, 212, 0.1); color: var(--muted); }
+      .task-side { display: grid; align-content: start; justify-items: end; gap: 8px; min-width: 148px; }
+      .task-open { border-radius: 8px; padding: 6px 9px; color: var(--accent); font-size: 0.76rem; font-weight: 800; }
+      .badge { padding: 5px 9px; border: 1px solid currentColor; }
+      .status-done { color: var(--success); }
+      .status-ready { color: var(--accent-2); }
+      .status-in_progress, .status-verifying { color: var(--info); }
+      .status-backlog { color: var(--muted); }
+      .status-blocked, .status-rework { color: var(--danger); }
+      .status-canceled { color: var(--warning); }
+      .availability { padding: 5px 9px; background: rgba(174, 187, 212, 0.08); color: var(--muted); }
+      .availability.ready { background: rgba(87, 215, 160, 0.1); color: var(--success); }
+      .availability.blocked { background: rgba(255, 125, 145, 0.08); color: #ffabb8; }
+      .dependency-block { margin-top: 12px; }
+      .dependency-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.76rem; font-weight: 750; }
+      .dependency { padding: 4px 8px; border: 1px solid var(--line); color: var(--muted); }
+      .dependency-button { border-radius: 999px; }
+      .dependency-button:hover { border-color: var(--accent); color: var(--text); }
+      .dependency.resolved { border-color: rgba(87, 215, 160, 0.35); color: var(--success); }
+      .dependency.missing { border-color: var(--danger); color: var(--danger); }
+      .task-note { margin: 12px 0 0; padding-left: 10px; border-left: 3px solid var(--warning); color: var(--muted); font-size: 0.86rem; }
+      .empty { padding: 22px; color: var(--muted); text-align: center; }
+      .fatal { padding: 22px; border-color: var(--danger); color: #ffd7dd; }
+      body.compact .task-card { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px; }
+      body.compact .task-title { margin-bottom: 6px; font-size: 0.92rem; }
+      body.compact .dependency-block, body.compact .task-note { display: none; }
+      body.compact .task-list { gap: 6px; }
+
+      dialog {
+        width: min(720px, calc(100% - 24px));
+        max-height: min(86vh, 820px);
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55);
+      }
+      dialog::backdrop { background: rgba(2, 6, 14, 0.76); backdrop-filter: blur(4px); }
+      .dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+      .dialog-header h2 { margin-bottom: 3px; }
+      .dialog-close { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 1.2rem; }
+      .dialog-body { max-height: calc(86vh - 82px); overflow: auto; padding: 22px; }
+      .detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+      .detail-item { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+      .detail-label { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 750; }
+      .detail-value { display: block; margin-top: 3px; font-weight: 800; overflow-wrap: anywhere; }
+      .detail-section { margin-top: 20px; }
+      .detail-section h3 { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; }
+      .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+      .toast { position: fixed; right: 18px; bottom: 18px; z-index: 20; padding: 10px 14px; border: 1px solid var(--accent-2); border-radius: 10px; background: #0d1d1a; color: var(--accent-2); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: 180ms ease; }
+      .toast.visible { opacity: 1; transform: translateY(0); }
+      footer { margin-top: 22px; color: var(--muted); text-align: center; font-size: 0.8rem; }
+
+      @media (max-width: 1040px) {
+        .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filter-search { grid-column: 1 / -1; }
+      }
+      @media (max-width: 720px) {
+        main { width: min(100% - 20px, 1240px); padding-top: 10px; }
+        .hero { grid-template-columns: 1fr; padding: 20px; }
+        .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filter-grid { grid-template-columns: 1fr; }
+        .filter-search { grid-column: auto; }
+        .task-card { grid-template-columns: 45px minmax(0, 1fr); }
+        .task-side { grid-column: 2; justify-items: start; min-width: 0; }
+        .filter-heading { align-items: flex-start; flex-direction: column; }
+        .detail-grid { grid-template-columns: 1fr 1fr; }
+        body.compact .task-card { grid-template-columns: 42px minmax(0, 1fr); }
+        body.compact .task-side { grid-column: 2; }
+      }
+      @media (max-width: 430px) {
+        .metrics { grid-template-columns: 1fr; }
+        .filter-footer, .deviation-header, .gate-heading { align-items: flex-start; flex-direction: column; }
+        .task-card { grid-template-columns: 1fr; }
+        .task-side { grid-column: 1; }
+        .gate-stats { width: 100%; justify-content: space-between; }
+        .gate-toggle { align-items: flex-start; flex-direction: column; }
+        .detail-grid { grid-template-columns: 1fr; }
+        body.compact .task-card { grid-template-columns: 1fr; }
+        body.compact .task-side { grid-column: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#task-flow">Ir para a lista de tasks</a>
+    <main>
+      <header class="panel hero">
+        <div>
+          <p class="eyebrow">MediaFlow · desenvolvimento local</p>
+          <h1>Backlog operacional</h1>
+          <p class="subtitle">Visão somente leitura das tasks da nova versão. O estado vem exclusivamente do arquivo de dados revisado pelo orquestrador.</p>
+          <div class="metadata" id="metadata" aria-label="Metadados do backlog"></div>
+          <p class="decision-note"><strong>Escopo de frontend:</strong> <code>frontend-v2/</code> é o único painel administrativo atual; <code>frontend/</code> é legado e fica fora destas tasks; <code>frontend-public/</code> nasce separadamente em MF-G2-PUB-101.</p>
+        </div>
+        <aside class="next-task" id="next-task" aria-live="polite"></aside>
+      </header>
+
+      <section class="metrics" id="metrics" aria-label="Indicadores do backlog"></section>
+
+      <section class="panel deviations" aria-labelledby="deviation-title">
+        <div class="deviation-header">
+          <h2 id="deviation-title">Detector de desvios</h2>
+          <strong id="deviation-summary" aria-live="polite"></strong>
+        </div>
+        <div id="deviation-content"></div>
+      </section>
+
+      <section class="panel filters" aria-labelledby="filter-title">
+        <div class="filter-heading">
+          <h2 id="filter-title">Explorar backlog</h2>
+          <div class="view-actions" aria-label="Opções de visualização">
+            <button class="toolbar-button" id="toggle-compact" type="button" aria-pressed="false">Modo compacto</button>
+            <button class="toolbar-button" id="toggle-gates" type="button">Recolher gates</button>
+          </div>
+        </div>
+        <div class="quick-filters" id="quick-filters" aria-label="Filtros rápidos">
+          <button class="quick-filter" type="button" data-quick="" aria-pressed="true">Todas</button>
+          <button class="quick-filter" type="button" data-quick="active" aria-pressed="false">Em andamento</button>
+          <button class="quick-filter" type="button" data-quick="ready" aria-pressed="false">Liberadas</button>
+          <button class="quick-filter" type="button" data-quick="attention" aria-pressed="false">Atenção</button>
+          <button class="quick-filter" type="button" data-quick="pending" aria-pressed="false">Pendentes</button>
+          <button class="quick-filter" type="button" data-quick="done" aria-pressed="false">Concluídas</button>
+        </div>
+        <div class="filter-grid">
+          <label class="filter-search" for="filter-search">Busca
+            <input id="filter-search" type="search" placeholder="ID, título, módulo, dependência ou nota" autocomplete="off" />
+          </label>
+          <label for="filter-gate">Gate
+            <select id="filter-gate"><option value="">Todos</option></select>
+          </label>
+          <label for="filter-feature">Feature
+            <select id="filter-feature"><option value="">Todas</option></select>
+          </label>
+          <label for="filter-module">Módulo
+            <select id="filter-module"><option value="">Todos</option></select>
+          </label>
+          <label for="filter-status">Status
+            <select id="filter-status"><option value="">Todos</option></select>
+          </label>
+        </div>
+        <div class="filter-footer">
+          <p class="filter-result" id="filter-result" aria-live="polite"></p>
+          <button class="reset-button" id="reset-filters" type="button">Limpar filtros</button>
+        </div>
+      </section>
+
+      <div id="task-flow" tabindex="-1"></div>
+      <footer>Arquivo estático e somente leitura · WIP máximo 1 · uma task por subagente</footer>
+    </main>
+
+    <dialog id="task-dialog" aria-labelledby="dialog-title">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Detalhes da task</p>
+          <h2 id="dialog-title"></h2>
+        </div>
+        <button class="dialog-action dialog-close" id="dialog-close" type="button" aria-label="Fechar detalhes">×</button>
+      </div>
+      <div class="dialog-body" id="dialog-body"></div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="./backlog-data.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        var statusOrder = ["READY", "IN_PROGRESS", "VERIFYING", "REWORK", "BLOCKED", "BACKLOG", "DONE", "CANCELED"];
+        var activeStatuses = ["IN_PROGRESS", "VERIFYING"];
+        var terminalDependencies = ["DONE", "CANCELED"];
+        var filters = {
+          search: document.getElementById("filter-search"),
+          gate: document.getElementById("filter-gate"),
+          feature: document.getElementById("filter-feature"),
+          module: document.getElementById("filter-module"),
+          status: document.getElementById("filter-status")
+        };
+        var escapeMap = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" };
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value).replace(/[&<>"']/g, function (character) {
+            return escapeMap[character];
+          });
+        }
+
+        function asFeatures(task) {
+          return Array.isArray(task.feature) ? task.feature : [task.feature];
+        }
+
+        function uniqueSorted(values, sorter) {
+          var unique = Array.from(new Set(values));
+          return unique.sort(sorter || function (left, right) { return String(left).localeCompare(String(right), "pt-BR"); });
+        }
+
+        function fillSelect(select, values, prefix) {
+          values.forEach(function (value) {
+            var option = document.createElement("option");
+            option.value = value;
+            option.textContent = prefix ? prefix + value : value;
+            select.appendChild(option);
+          });
+        }
+
+        function fatal(message) {
+          document.getElementById("task-flow").innerHTML = '<section class="panel fatal"><h2>Dados indisponíveis</h2><p>' + escapeHtml(message) + "</p></section>";
+          document.getElementById("next-task").innerHTML = "<strong>Não foi possível calcular a próxima task.</strong>";
+          document.getElementById("deviation-summary").textContent = "Leitura interrompida";
+        }
+
+        if (!window.MEDIAFLOW_BACKLOG || !Array.isArray(window.MEDIAFLOW_BACKLOG.tasks)) {
+          fatal("O arquivo backlog-data.js não foi carregado. Mantenha os dois arquivos na mesma pasta e abra index.html novamente.");
+          return;
+        }
+
+        var backlog = window.MEDIAFLOW_BACKLOG;
+        var metadata = backlog.metadata || {};
+        var tasks = backlog.tasks.slice().sort(function (left, right) { return left.sequence - right.sequence; });
+        var taskById = new Map(tasks.map(function (task) { return [task.id, task]; }));
+        var quickFilter = "";
+        var collapsedGates = new Set();
+        var dialog = document.getElementById("task-dialog");
+        var toastTimer;
+
+        function getDependents(taskId) {
+          return tasks.filter(function (task) { return task.dependsOn.indexOf(taskId) >= 0; });
+        }
+
+        function showToast(message) {
+          var toast = document.getElementById("toast");
+          window.clearTimeout(toastTimer);
+          toast.textContent = message;
+          toast.classList.add("visible");
+          toastTimer = window.setTimeout(function () { toast.classList.remove("visible"); }, 1800);
+        }
+
+        function copyText(value) {
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(value).then(function () { showToast("ID copiado: " + value); });
+            return;
+          }
+          var helper = document.createElement("textarea");
+          helper.value = value;
+          helper.setAttribute("readonly", "");
+          helper.style.position = "fixed";
+          helper.style.opacity = "0";
+          document.body.appendChild(helper);
+          helper.select();
+          document.execCommand("copy");
+          helper.remove();
+          showToast("ID copiado: " + value);
+        }
+
+        function taskReferenceButton(task, label) {
+          if (!task) return "";
+          return '<button class="dependency dependency-button" type="button" data-open-task="' + escapeHtml(task.id) + '">' + escapeHtml(label || task.id) + "</button>";
+        }
+
+        function openTaskDetails(taskId) {
+          var task = taskById.get(taskId);
+          if (!task) return;
+          var availability = availabilityFor(task);
+          var dependents = getDependents(task.id);
+          var knownStatus = statusOrder.indexOf(task.status) >= 0 ? task.status : "BACKLOG";
+          document.getElementById("dialog-title").textContent = task.id;
+          document.getElementById("dialog-body").innerHTML =
+            '<h3 class="task-title">' + escapeHtml(task.title) + "</h3>" +
+            '<div class="task-meta">' + renderFeaturePills(task) + '<span class="feature-pill module-pill">' + escapeHtml(task.gate) + '</span><span class="feature-pill module-pill">' + escapeHtml(task.module) + '</span><span class="badge status-' + knownStatus.toLowerCase() + '">' + escapeHtml(task.status) + "</span></div>" +
+            '<div class="detail-grid">' +
+              '<div class="detail-item"><span class="detail-label">Sequência</span><span class="detail-value">#' + escapeHtml(task.sequence) + "</span></div>" +
+              '<div class="detail-item"><span class="detail-label">Disponibilidade</span><span class="detail-value">' + escapeHtml(availability.text) + "</span></div>" +
+              '<div class="detail-item"><span class="detail-label">Execução</span><span class="detail-value">' + (task.localOnly ? "Somente local" : "Não informada") + "</span></div>" +
+            "</div>" +
+            '<section class="detail-section"><h3>Dependências</h3><div class="dependencies">' + renderDependencies(task) + "</div></section>" +
+            '<section class="detail-section"><h3>Desbloqueia diretamente</h3><div class="dependencies">' + (dependents.length ? dependents.map(function (dependent) { return taskReferenceButton(dependent, dependent.id + " · " + dependent.status); }).join("") : '<span class="dependency">Nenhuma task</span>') + "</div></section>" +
+            (task.note ? '<section class="detail-section"><h3>Nota operacional</h3><p class="task-note">' + escapeHtml(task.note) + "</p></section>" : "") +
+            '<div class="detail-actions"><button class="dialog-action" type="button" data-copy-task="' + escapeHtml(task.id) + '">Copiar ID</button><button class="dialog-action" type="button" data-filter-task="' + escapeHtml(task.id) + '">Localizar no backlog</button></div>';
+          if (!dialog.open) dialog.showModal();
+        }
+
+        function dependenciesResolved(task) {
+          return task.dependsOn.every(function (dependencyId) {
+            var dependency = taskById.get(dependencyId);
+            return dependency && terminalDependencies.indexOf(dependency.status) >= 0;
+          });
+        }
+
+        function detectCycles() {
+          var visiting = new Set();
+          var visited = new Set();
+          var cycles = [];
+
+          function visit(task, path) {
+            if (visiting.has(task.id)) {
+              cycles.push(path.concat(task.id).join(" → "));
+              return;
+            }
+            if (visited.has(task.id)) return;
+            visiting.add(task.id);
+            task.dependsOn.forEach(function (dependencyId) {
+              var dependency = taskById.get(dependencyId);
+              if (dependency) visit(dependency, path.concat(task.id));
+            });
+            visiting.delete(task.id);
+            visited.add(task.id);
+          }
+
+          tasks.forEach(function (task) { visit(task, []); });
+          return uniqueSorted(cycles);
+        }
+
+        function detectDeviations() {
+          var deviations = [];
+          var ids = new Map();
+          var sequences = new Map();
+
+          tasks.forEach(function (task) {
+            ids.set(task.id, (ids.get(task.id) || 0) + 1);
+            sequences.set(task.sequence, (sequences.get(task.sequence) || 0) + 1);
+          });
+
+          ids.forEach(function (count, id) {
+            if (count > 1) deviations.push("ID duplicado: " + id + ".");
+          });
+          sequences.forEach(function (count, sequence) {
+            if (count > 1) deviations.push("Sequência duplicada: " + sequence + ".");
+          });
+
+          tasks.forEach(function (task) {
+            if (task.localOnly !== true) deviations.push(task.id + " não está marcada como localOnly.");
+            task.dependsOn.forEach(function (dependencyId) {
+              var dependency = taskById.get(dependencyId);
+              if (!dependency) {
+                deviations.push(task.id + " referencia dependência ausente: " + dependencyId + ".");
+              } else {
+                if (dependencyId === task.id) deviations.push(task.id + " depende de si mesma.");
+                if (dependency.sequence >= task.sequence) deviations.push(task.id + " possui dependência igual ou posterior: " + dependencyId + ".");
+              }
+            });
+          });
+
+          detectCycles().forEach(function (cycle) { deviations.push("Ciclo de dependências: " + cycle + "."); });
+
+          var active = tasks.filter(function (task) { return activeStatuses.indexOf(task.status) >= 0; });
+          if (active.length > Number(metadata.wipLimit)) {
+            deviations.push("WIP excedido: " + active.length + " tasks ativas para limite " + metadata.wipLimit + ".");
+          }
+
+          tasks.forEach(function (task) {
+            if ((activeStatuses.indexOf(task.status) >= 0 || task.status === "DONE") && !dependenciesResolved(task)) {
+              deviations.push(task.id + " está " + task.status + " com dependência ainda não concluída ou cancelada.");
+            }
+          });
+
+          var ready = tasks.filter(function (task) { return task.status === "READY"; });
+          if (ready.length > 1) deviations.push("Há mais de uma task READY: " + ready.map(function (task) { return task.id; }).join(", ") + ".");
+
+          tasks.forEach(function (task) {
+            if (task.status === "BLOCKED" || task.status === "REWORK") deviations.push(task.id + " requer atenção por estar " + task.status + ".");
+          });
+
+          active.forEach(function (task) {
+            var earlierOpen = tasks.find(function (candidate) {
+              return candidate.sequence < task.sequence && (candidate.status === "READY" || candidate.status === "REWORK");
+            });
+            if (earlierOpen) deviations.push(task.id + " está ativa enquanto " + earlierOpen.id + " permanece aberta em sequência anterior.");
+          });
+
+          if (metadata.source !== "docs/plan.md") deviations.push("Fonte funcional divergente: " + String(metadata.source || "não informada") + ".");
+          return uniqueSorted(deviations);
+        }
+
+        function metric(label, value, detail, progress, filterKey) {
+          var bar = typeof progress === "number"
+            ? '<div class="progress-track" aria-hidden="true"><span class="progress-fill" style="width:' + Math.max(0, Math.min(100, progress)) + '%"></span></div>'
+            : "";
+          var content = '<div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(value) + '</div><div class="metric-detail">' + escapeHtml(detail || "") + "</div>" + bar;
+          return typeof filterKey === "string"
+            ? '<button class="panel metric" type="button" data-metric-filter="' + escapeHtml(filterKey) + '" aria-pressed="false">' + content + "</button>"
+            : '<article class="panel metric">' + content + "</article>";
+        }
+
+        function renderSummary(deviations) {
+          var counts = Object.fromEntries(statusOrder.map(function (status) {
+            return [status, tasks.filter(function (task) { return task.status === status; }).length];
+          }));
+          var donePercent = tasks.length ? Math.round((counts.DONE / tasks.length) * 1000) / 10 : 0;
+          var wipCount = counts.IN_PROGRESS + counts.VERIFYING;
+          var attention = counts.BLOCKED + counts.REWORK;
+
+          document.getElementById("metadata").innerHTML = [
+            "Fonte: " + (metadata.source || "não informada"),
+            "Atualizado: " + (metadata.updatedAt || "não informado"),
+            "Versão: " + (metadata.version || "não informada"),
+            "WIP máximo: " + metadata.wipLimit
+          ].map(function (item) { return '<span class="meta-pill">' + escapeHtml(item) + "</span>"; }).join("");
+
+          document.getElementById("metrics").innerHTML = [
+            metric("Total", tasks.length, "tasks da nova versão", null, ""),
+            metric("Progresso", donePercent + "%", counts.DONE + " concluídas", donePercent),
+            metric("DONE", counts.DONE, "validadas", null, "done"),
+            metric("READY", counts.READY, "liberadas", null, "ready"),
+            metric("Em curso / WIP", wipCount + "/" + metadata.wipLimit, "execução + verificação", null, "active"),
+            metric("BLOCKED + REWORK", attention, "exigem atenção", null, "attention"),
+            metric("Desvios", deviations.length, deviations.length ? "revisar painel" : "estrutura íntegra")
+          ].join("");
+
+          var activeTask = tasks.find(function (task) { return activeStatuses.indexOf(task.status) >= 0; });
+          var next = activeTask || tasks.find(function (task) { return task.status === "READY"; });
+          document.getElementById("next-task").innerHTML = next
+            ? '<span class="sequence">' + (activeTask ? "Task em curso" : "Próxima task") + ' · #' + escapeHtml(next.sequence) + '</span><strong>' + escapeHtml(next.id) + '</strong><p>' + escapeHtml(next.title) + '</p><button class="next-task-action" type="button" data-open-task="' + escapeHtml(next.id) + '">Ver detalhes e dependências</button>'
+            : '<span class="sequence">Próxima task</span><strong>Nenhuma task READY</strong><p>O orquestrador precisa liberar a próxima task elegível.</p>';
+
+          var summary = document.getElementById("deviation-summary");
+          var content = document.getElementById("deviation-content");
+          if (deviations.length) {
+            summary.className = "";
+            summary.textContent = deviations.length + (deviations.length === 1 ? " desvio" : " desvios");
+            content.innerHTML = '<ul class="deviation-list">' + deviations.map(function (item) { return "<li>" + escapeHtml(item) + "</li>"; }).join("") + "</ul>";
+          } else {
+            summary.className = "deviation-ok";
+            summary.textContent = "Zero desvios estruturais";
+            content.innerHTML = '<p class="decision-note">MF-G0-SEC-01 está CANCELED por decisão de escopo local registrada no dataset; isso não é um desvio.</p>';
+          }
+        }
+
+        function renderFeaturePills(task) {
+          return asFeatures(task).map(function (feature) {
+            return '<span class="feature-pill">Feature ' + escapeHtml(feature) + "</span>";
+          }).join("");
+        }
+
+        function availabilityFor(task) {
+          if (task.status === "DONE") return { text: "Finalizada", className: "ready" };
+          if (task.status === "CANCELED") return { text: "Fora do escopo", className: "" };
+          if (task.status === "READY") return { text: "Liberada", className: "ready" };
+          if (dependenciesResolved(task)) return { text: "Deps atendidas · aguarda /root", className: "ready" };
+          return { text: "Bloqueada por dependências", className: "blocked" };
+        }
+
+        function renderDependencies(task) {
+          if (!task.dependsOn.length) return '<span class="dependency">Nenhuma</span>';
+          return task.dependsOn.map(function (dependencyId) {
+            var dependency = taskById.get(dependencyId);
+            var className = !dependency ? " missing" : terminalDependencies.indexOf(dependency.status) >= 0 ? " resolved" : "";
+            var suffix = dependency ? " · " + dependency.status : " · ausente";
+            return dependency
+              ? '<button class="dependency dependency-button' + className + '" type="button" data-open-task="' + escapeHtml(dependencyId) + '">' + escapeHtml(dependencyId + suffix) + "</button>"
+              : '<span class="dependency' + className + '">' + escapeHtml(dependencyId + suffix) + "</span>";
+          }).join("");
+        }
+
+        function matchesQuickFilter(task) {
+          if (!quickFilter) return true;
+          if (quickFilter === "active") return activeStatuses.indexOf(task.status) >= 0;
+          if (quickFilter === "ready") return task.status === "READY";
+          if (quickFilter === "attention") return task.status === "BLOCKED" || task.status === "REWORK";
+          if (quickFilter === "pending") return task.status === "BACKLOG";
+          if (quickFilter === "done") return task.status === "DONE";
+          return true;
+        }
+
+        function taskMatches(task) {
+          var search = filters.search.value.trim().toLocaleLowerCase("pt-BR");
+          var searchable = [task.id, task.title, task.module, task.gate, task.status, task.note || ""]
+            .concat(task.dependsOn, asFeatures(task))
+            .join(" ")
+            .toLocaleLowerCase("pt-BR");
+          return (!search || searchable.indexOf(search) >= 0)
+            && matchesQuickFilter(task)
+            && (!filters.gate.value || task.gate === filters.gate.value)
+            && (!filters.feature.value || asFeatures(task).indexOf(filters.feature.value) >= 0)
+            && (!filters.module.value || task.module === filters.module.value)
+            && (!filters.status.value || task.status === filters.status.value);
+        }
+
+        function renderTask(task) {
+          var availability = availabilityFor(task);
+          var knownStatus = statusOrder.indexOf(task.status) >= 0 ? task.status : "BACKLOG";
+          return '<article class="task-card" data-task-card="' + escapeHtml(task.id) + '" data-ready="' + String(task.status === "READY") + '">' +
+            '<div class="task-sequence">#' + escapeHtml(task.sequence) + "</div>" +
+            '<div><div class="task-id">' + escapeHtml(task.id) + '</div><h3 class="task-title">' + escapeHtml(task.title) + "</h3>" +
+            '<div class="task-meta">' + renderFeaturePills(task) + '<span class="feature-pill module-pill">' + escapeHtml(task.gate) + '</span><span class="feature-pill module-pill">' + escapeHtml(task.module) + "</span></div>" +
+            '<div class="dependency-block"><span class="dependency-label">Dependências</span><div class="dependencies">' + renderDependencies(task) + "</div></div>" +
+            (task.note ? '<p class="task-note">' + escapeHtml(task.note) + "</p>" : "") + "</div>" +
+            '<div class="task-side"><span class="badge status-' + knownStatus.toLowerCase() + '">' + escapeHtml(task.status) + '</span><span class="availability ' + availability.className + '">' + escapeHtml(availability.text) + '</span><button class="task-open" type="button" data-open-task="' + escapeHtml(task.id) + '">Ver detalhes →</button></div></article>';
+        }
+
+        function updateQuickFilterControls() {
+          document.querySelectorAll("[data-quick]").forEach(function (button) {
+            button.setAttribute("aria-pressed", String(button.dataset.quick === quickFilter));
+          });
+          document.querySelectorAll("[data-metric-filter]").forEach(function (button) {
+            button.setAttribute("aria-pressed", String(button.dataset.metricFilter === quickFilter));
+          });
+        }
+
+        function setQuickFilter(value) {
+          quickFilter = value || "";
+          filters.status.value = "";
+          updateQuickFilterControls();
+          renderTasks();
+        }
+
+        function renderTasks() {
+          var visible = tasks.filter(taskMatches);
+          var gates = uniqueSorted(visible.map(function (task) { return task.gate; }), function (left, right) {
+            return Number(left.slice(1)) - Number(right.slice(1));
+          });
+          document.getElementById("filter-result").textContent = visible.length + " de " + tasks.length + " tasks exibidas";
+          document.getElementById("task-flow").innerHTML = gates.length
+            ? gates.map(function (gate) {
+                var gateTasks = visible.filter(function (task) { return task.gate === gate; });
+                var allGateTasks = tasks.filter(function (task) { return task.gate === gate; });
+                var done = allGateTasks.filter(function (task) { return task.status === "DONE"; }).length;
+                var progress = allGateTasks.length ? Math.round(done / allGateTasks.length * 100) : 0;
+                var collapsed = collapsedGates.has(gate);
+                return '<section class="panel gate-section" data-gate="' + escapeHtml(gate) + '" data-collapsed="' + String(collapsed) + '"><div class="gate-heading"><button class="gate-toggle" type="button" data-toggle-gate="' + escapeHtml(gate) + '" aria-expanded="' + String(!collapsed) + '" aria-controls="tasks-' + escapeHtml(gate) + '"><span class="gate-title"><span class="gate-chevron" aria-hidden="true">▾</span><h2>' + escapeHtml(gate) + '</h2></span><span class="gate-stats"><span class="gate-progress" title="' + progress + '% concluído"><span style="width:' + progress + '%"></span></span><span class="gate-count">' + gateTasks.length + (gateTasks.length === 1 ? " task" : " tasks") + ' · ' + progress + '%</span></span></button></div><div class="task-list" id="tasks-' + escapeHtml(gate) + '">' + gateTasks.map(renderTask).join("") + "</div></section>";
+              }).join("")
+            : '<section class="panel empty"><p>Nenhuma task corresponde aos filtros.</p></section>';
+          updateQuickFilterControls();
+          var allCollapsed = gates.length && gates.every(function (gate) { return collapsedGates.has(gate); });
+          document.getElementById("toggle-gates").textContent = allCollapsed ? "Expandir gates" : "Recolher gates";
+        }
+
+        fillSelect(filters.gate, uniqueSorted(tasks.map(function (task) { return task.gate; }), function (left, right) { return Number(left.slice(1)) - Number(right.slice(1)); }));
+        fillSelect(filters.feature, uniqueSorted(tasks.flatMap(asFeatures)), "Feature ");
+        fillSelect(filters.module, uniqueSorted(tasks.map(function (task) { return task.module; })));
+        fillSelect(filters.status, statusOrder.filter(function (status) { return tasks.some(function (task) { return task.status === status; }); }));
+
+        Object.values(filters).forEach(function (control) {
+          control.addEventListener(control === filters.search ? "input" : "change", function () {
+            if (control === filters.status) {
+              quickFilter = "";
+              updateQuickFilterControls();
+            }
+            renderTasks();
+          });
+        });
+        document.getElementById("reset-filters").addEventListener("click", function () {
+          Object.values(filters).forEach(function (control) { control.value = ""; });
+          quickFilter = "";
+          updateQuickFilterControls();
+          filters.search.focus();
+          renderTasks();
+        });
+
+        document.getElementById("quick-filters").addEventListener("click", function (event) {
+          var button = event.target.closest("[data-quick]");
+          if (button) setQuickFilter(button.dataset.quick);
+        });
+
+        document.getElementById("metrics").addEventListener("click", function (event) {
+          var button = event.target.closest("[data-metric-filter]");
+          if (button) {
+            setQuickFilter(button.dataset.metricFilter);
+            document.getElementById("task-flow").scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+
+        document.getElementById("next-task").addEventListener("click", function (event) {
+          var button = event.target.closest("[data-open-task]");
+          if (button) openTaskDetails(button.dataset.openTask);
+        });
+
+        document.getElementById("task-flow").addEventListener("click", function (event) {
+          var taskButton = event.target.closest("[data-open-task]");
+          if (taskButton) {
+            openTaskDetails(taskButton.dataset.openTask);
+            return;
+          }
+          var gateButton = event.target.closest("[data-toggle-gate]");
+          if (gateButton) {
+            var gate = gateButton.dataset.toggleGate;
+            if (collapsedGates.has(gate)) collapsedGates.delete(gate);
+            else collapsedGates.add(gate);
+            renderTasks();
+          }
+        });
+
+        document.getElementById("toggle-compact").addEventListener("click", function () {
+          var compact = document.body.classList.toggle("compact");
+          this.setAttribute("aria-pressed", String(compact));
+          this.textContent = compact ? "Modo detalhado" : "Modo compacto";
+        });
+
+        document.getElementById("toggle-gates").addEventListener("click", function () {
+          var visibleGates = uniqueSorted(tasks.filter(taskMatches).map(function (task) { return task.gate; }));
+          var allCollapsed = visibleGates.length && visibleGates.every(function (gate) { return collapsedGates.has(gate); });
+          visibleGates.forEach(function (gate) {
+            if (allCollapsed) collapsedGates.delete(gate);
+            else collapsedGates.add(gate);
+          });
+          renderTasks();
+        });
+
+        document.getElementById("dialog-close").addEventListener("click", function () { dialog.close(); });
+        dialog.addEventListener("click", function (event) {
+          if (event.target === dialog) dialog.close();
+        });
+        document.getElementById("dialog-body").addEventListener("click", function (event) {
+          var taskButton = event.target.closest("[data-open-task]");
+          if (taskButton) {
+            openTaskDetails(taskButton.dataset.openTask);
+            return;
+          }
+          var copyButton = event.target.closest("[data-copy-task]");
+          if (copyButton) {
+            copyText(copyButton.dataset.copyTask);
+            return;
+          }
+          var filterButton = event.target.closest("[data-filter-task]");
+          if (filterButton) {
+            var task = taskById.get(filterButton.dataset.filterTask);
+            Object.values(filters).forEach(function (control) { control.value = ""; });
+            quickFilter = "";
+            if (task) collapsedGates.delete(task.gate);
+            filters.search.value = filterButton.dataset.filterTask;
+            dialog.close();
+            renderTasks();
+            window.requestAnimationFrame(function () {
+              var card = document.querySelector('[data-task-card="' + CSS.escape(filterButton.dataset.filterTask) + '"]');
+              if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+            });
+          }
+        });
+
+        document.addEventListener("keydown", function (event) {
+          var typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+          if (event.key === "/" && !typing && !dialog.open) {
+            event.preventDefault();
+            filters.search.focus();
+          }
+        });
+
+        var deviations = detectDeviations();
+        renderSummary(deviations);
+        renderTasks();
+      })();
+    </script>
+  </body>
+</html>
