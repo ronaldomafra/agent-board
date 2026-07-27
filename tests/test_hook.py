@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+import io
 import json
 import os
 import shutil
@@ -7,7 +9,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from agentboard.hook_guard import hook_protection_status
+
+CODEX_HOOK_PATH = Path(__file__).parents[1] / "scripts" / "codex_hook.py"
+CODEX_HOOK_SPEC = importlib.util.spec_from_file_location(
+    "agentboard_codex_hook",
+    CODEX_HOOK_PATH,
+)
+assert CODEX_HOOK_SPEC is not None
+assert CODEX_HOOK_SPEC.loader is not None
+codex_hook = importlib.util.module_from_spec(CODEX_HOOK_SPEC)
+CODEX_HOOK_SPEC.loader.exec_module(codex_hook)
 
 
 def run_hook(
@@ -103,3 +117,52 @@ def test_hook_protection_rejects_a_marker_after_installed_script_changes(
         "active": False,
         "reason": "hook_script_changed",
     }
+
+
+def test_session_start_survives_unwritable_activation_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = {
+        "session_id": "hook-test-session",
+        "cwd": "C:/project",
+        "hook_event_name": "SessionStart",
+    }
+
+    def fail_activation(_payload: dict[str, object]) -> None:
+        raise PermissionError("activation marker is not writable")
+
+    monkeypatch.setattr(codex_hook, "record_activation", fail_activation)
+    monkeypatch.setattr(sys, "argv", ["codex_hook.py", "--activate"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+
+    assert codex_hook.main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_pre_tool_use_still_denies_when_activation_marker_is_unwritable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = {
+        "session_id": "hook-test-session",
+        "cwd": "C:/project",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "git push origin main"},
+    }
+
+    def fail_activation(_payload: dict[str, object]) -> None:
+        raise PermissionError("activation marker is not writable")
+
+    monkeypatch.setattr(codex_hook, "record_activation", fail_activation)
+    monkeypatch.setattr(sys, "argv", ["codex_hook.py"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+
+    assert codex_hook.main() == 0
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert captured.err == ""

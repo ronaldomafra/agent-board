@@ -217,7 +217,12 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         payload = {}
-    record_activation(payload)
+    try:
+        record_activation(payload)
+    except OSError:
+        # Activation is defense in depth. Git-enabled claims remain blocked by
+        # the service when a valid marker could not be recorded.
+        pass
     if len(sys.argv) > 1 and sys.argv[1] == "--activate":
         return 0
     result = decision(payload)
