@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/codex_hook.py\" --activate",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\scripts\\codex_hook.py\" --activate",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/codex_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\scripts\\codex_hook.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,137 +1,104 @@
 # AgentBoard
 
-Control plane local-first para agentes de desenvolvimento com IA. O AgentBoard combina um plugin Codex, um servidor MCP, um dashboard local e orquestração de tasks persistida em SQLite.
+AgentBoard é um control plane local-first para planejar, agendar, executar e revisar trabalho
+feito por agentes Codex. A configuração declarativa permanece no Git; tasks, leases, runs,
+reviews, evidências e eventos ficam no SQLite local.
 
-## Status do projeto
+O fluxo principal é:
 
-O repositório contém a fundação arquitetural e os contratos do primeiro fluxo vertical. Ele ainda não é um pacote publicado nem um plugin pronto para produção.
+`requisitos → plano → aprovação → scheduler → reserva → spawn Codex → run → review → Git local → DONE`
 
-## Objetivos
+## Limites do produto
 
-- Coordenar tasks de desenvolvimento entre agentes Codex.
-- Aplicar dependências, limites de WIP, leases de tasks e transições de estado válidas.
-- Manter a configuração no Git e o histórico operacional em SQLite local.
-- Expor as mesmas regras de domínio por tools MCP e por um dashboard web local.
-- Manter os serviços em `localhost` e ativos somente enquanto o Codex estiver em execução no MVP.
+- O serviço de domínio é a única autoridade para fases, dependências, WIP e leases.
+- MCP, HTTP e dashboard são adapters finos sobre o mesmo serviço.
+- O runtime e o dashboard escutam somente em `127.0.0.1`.
+- O Codex cria os subagentes nativamente; o AgentBoard reserva e registra o trabalho.
+- Git é estritamente local. Não há `push`, `pull`, `fetch`, `clone`, `ls-remote`, GitHub, PR,
+  deploy, `reset` destrutivo ou `stash` automático.
+- Hooks Codex são defesa adicional, não uma fronteira de segurança. O adapter Git, as capabilities
+  e o serviço de domínio continuam sendo a garantia principal.
 
-## Visão da solução
+## Arquitetura
 
-```mermaid
-flowchart LR
-    subgraph Codex["Codex"]
-        Plugin["Plugin e skill"]
-        Agents["Orquestrador e agentes"]
-    end
-
-    subgraph AgentBoard["AgentBoard local"]
-        MCP["MCP stdio"]
-        Core["Serviço de domínio"]
-        DB[("SQLite")]
-        Web["Dashboard HTTP e SSE"]
-    end
-
-    Browser["Navegador"]
-
-    Plugin --> Agents
-    Agents -->|"tools MCP"| MCP
-    MCP --> Core
-    Core <--> DB
-    Core --> Web
-    Web -->|"localhost"| Browser
-
-    classDef codex fill:#2a1b16,stroke:#ff7a1a,color:#fff7f1,stroke-width:2px
-    classDef mcp fill:#2d1b33,stroke:#c38cff,color:#fff7f1,stroke-width:2px
-    classDef core fill:#193126,stroke:#54d6a0,color:#fff7f1,stroke-width:2px
-    classDef data fill:#172938,stroke:#77a7ff,color:#fff7f1,stroke-width:2px
-    classDef dashboard fill:#3a2518,stroke:#ffab62,color:#fff7f1,stroke-width:2px
-    class Plugin,Agents codex
-    class MCP mcp
-    class Core core
-    class DB data
-    class Web,Browser dashboard
+```text
+Codex / subagentes --stdio MCP--> ponte MCP --loopback autenticado--+
+Dashboard ---------------------HTTP/SSE-----------------------------+--> runtime
+                                                                     +--> serviço de domínio
+                                                                     +--> SQLite
+Configuração versionada --------------------------------------------+--> validação/política
 ```
 
-O Codex usa o MCP para executar operações do AgentBoard. O dashboard é uma interface web local e consulta o mesmo serviço de domínio; ele não acessa o banco diretamente.
+Existe no máximo um runtime por projeto. A identidade combina o caminho real do projeto e o Git
+common directory. Banco, lock, PID, nonce, porta, backups e worktrees ficam em `.agentboard/` e
+nunca devem ser versionados.
 
-## Fluxo de uma task
+## Pré-requisitos
 
-```mermaid
-flowchart LR
-    Backlog["BACKLOG"] --> Ready["READY"]
-    Ready --> Assigned["ASSIGNED"]
-    Assigned --> Progress["IN PROGRESS"]
-    Progress --> Verify["VERIFYING"]
-    Verify --> Done["DONE"]
+- Python 3.11 ou superior
+- `uv` para desenvolvimento
+- Node.js LTS e npm para construir o dashboard
+- Git local quando o perfil de evidência exigir checkpoints ou integração
 
-    Ready --> Blocked["BLOCKED"]
-    Assigned --> Blocked
-    Progress --> Blocked
-    Verify --> Blocked
-    Progress --> Rework["REWORK"]
-    Verify --> Rework
-    Rework --> Progress
-    Blocked --> Ready
-    Blocked --> Progress
-    Backlog --> Canceled["CANCELED"]
-    Ready --> Canceled
-    Blocked --> Canceled
-    Rework --> Canceled
-
-    classDef planned fill:#2a2117,stroke:#ffab62,color:#fff7f1,stroke-width:2px
-    classDef active fill:#392d11,stroke:#ffc34d,color:#fff7f1,stroke-width:2px
-    classDef complete fill:#173326,stroke:#54d6a0,color:#fff7f1,stroke-width:2px
-    classDef exception fill:#3b1920,stroke:#ff6878,color:#fff7f1,stroke-width:2px
-    class Backlog,Ready,Assigned planned
-    class Progress,Verify active
-    class Done complete
-    class Blocked,Rework,Canceled exception
-```
-
-As mudanças de estado são validadas pelo serviço de domínio. O AgentBoard verifica dependências, limite de WIP, lease ativo, versão esperada e evidências antes de aceitar uma transição.
-
-## Ciclo operacional
-
-```mermaid
-sequenceDiagram
-    participant O as Orquestrador
-    participant M as MCP AgentBoard
-    participant W as Worker
-    participant R as Reviewer
-    participant D as Dashboard
-
-    O->>M: task_claim
-    M-->>D: Evento de lease e status
-    O->>W: Task, escopo e arquivos sob lease
-    W->>M: task_heartbeat
-    M-->>D: Progresso em tempo real
-    W->>M: task_report_result
-    O->>R: Solicita revisão
-    R->>M: task_transition para DONE ou REWORK
-    M-->>D: Evidência e estado final
-```
-
-## Estrutura do repositório
-
-| Caminho | Finalidade |
-| --- | --- |
-| `src/agentboard/` | Domínio Python, persistência, serviços e adapters MCP/web |
-| `web/` | Código-fonte do dashboard React/Vite |
-| `skills/` | Fluxo Codex para orquestração de tasks |
-| `.codex/agents/` | Perfis de agentes específicos do projeto |
-| `config/` | Exemplos versionados de configuração de orquestração |
-| `docs/` | Arquitetura e documentação de desenvolvimento |
-| `tests/` | Testes do domínio e dos adapters |
-
-## Desenvolvimento
+## Instalação de desenvolvimento
 
 ```bash
 uv sync --all-groups
-uv run pytest
-uv run ruff check .
+cd web
+npm ci
+npm run build
+cd ..
 uv run agentboard --help
 ```
 
-Leia o [guia de desenvolvimento](DEVELOPMENT_GUIDE.md) antes de implementar uma funcionalidade. As regras específicas para o Codex estão em [AGENTS.md](AGENTS.md).
+Para usar o plugin no Codex, instale o CLI no ambiente que inicia o Codex e gere o marketplace
+local compacto. O arquivo `.mcp.json` chama diretamente `agentboard mcp`; ele não usa `uvx` nem
+baixa pacotes durante a sessão.
+
+O procedimento completo, incluindo o marketplace local, confiança dos hooks e atualização do
+bundle, está em [docs/PLUGIN_INSTALLATION.md](docs/PLUGIN_INSTALLATION.md).
+
+## Primeira execução
+
+1. Copie `config/orchestration.example.yaml` para `agentboard.yaml` e ajuste a política.
+2. Valide a configuração antes de aplicá-la.
+3. Inicie `agentboard runtime` ou deixe `agentboard mcp` localizar/iniciar o runtime local.
+4. No Codex, invoque a skill `agentboard-orchestrate`.
+5. Abra o dashboard pelo bootstrap retornado por `dashboard_open`; não compartilhe a URL.
+
+O processo de configuração é sempre `rascunho → validação → diff → aplicação explícita`.
+Configuração nova vale para claims novos; runs existentes continuam vinculados à revisão anterior.
+
+Para a primeira rodada manual, use o projeto estático
+[Loja Exemplo](examples/loja-exemplo/README.md), com páginas inicial, produtos e sobre, configuração
+AgentBoard e um cenário pequeno de tasks.
+
+## Comandos de desenvolvimento
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run agentboard runtime
+uv run agentboard mcp
+```
+
+```bash
+cd web
+npm test
+npm run lint
+npm run build
+```
+
+Para validar o bundle do plugin:
+
+```bash
+python "/path/to/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py" .
+python scripts/codex_hook.py --self-test
+```
+
+Consulte [docs/OPERATIONS.md](docs/OPERATIONS.md) para bootstrap, recuperação, backup e segurança,
+[DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) para os marcos e
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para os limites de dados.
 
 ## Licença
 

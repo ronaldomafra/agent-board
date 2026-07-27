@@ -1,0 +1,94 @@
+{
+  "plan_id": "LOJA-MODELO-PRIMEIRA-RODADA",
+  "title": "Melhorias editoriais da Loja Modelo",
+  "objective": "Exercitar o fluxo completo do AgentBoard com três alterações pequenas e independentes.",
+  "target_branch": "main",
+  "tasks": [
+    {
+      "id": "LOJA-001",
+      "title": "Aprimorar a mensagem da página inicial",
+      "objective": "Acrescentar ao destaque inicial uma frase curta sobre compra consciente, preservando a estrutura e os links existentes.",
+      "scope": [
+        "Editar somente o conteúdo da seção principal de index.html",
+        "Reutilizar as classes existentes"
+      ],
+      "acceptance_criteria": [
+        "A nova mensagem aparece na primeira seção da página",
+        "Os links para Produtos e Sobre continuam funcionando",
+        "A página mantém um único h1"
+      ],
+      "test_plan": [
+        "Executar python scripts/verificar_site.py",
+        "Revisar index.html em largura ampla e móvel"
+      ],
+      "priority": "P2",
+      "risk": "LOW",
+      "suggested_profile": "agentboard_worker",
+      "expected_paths": [
+        "index.html"
+      ],
+      "evidence_profile": "default"
+    },
+    {
+      "id": "LOJA-002",
+      "title": "Enriquecer as informações do catálogo",
+      "objective": "Acrescentar uma indicação curta de material a cada um dos seis produtos sem criar controles de compra.",
+      "scope": [
+        "Editar somente os cartões em produtos.html",
+        "Manter exatamente seis produtos"
+      ],
+      "acceptance_criteria": [
+        "Cada produto informa um material",
+        "A página continua informando que a vitrine é demonstrativa",
+        "Não são adicionados botões sem função"
+      ],
+      "test_plan": [
+        "Executar python scripts/verificar_site.py",
+        "Confirmar visualmente os seis materiais na grade"
+      ],
+      "priority": "P2",
+      "risk": "LOW",
+      "suggested_profile": "agentboard_worker",
+      "expected_paths": [
+        "produtos.html"
+      ],
+      "evidence_profile": "default"
+    },
+    {
+      "id": "LOJA-003",
+      "title": "Adicionar perguntas frequentes",
+      "objective": "Incluir três perguntas e respostas sobre o caráter demonstrativo da loja usando elementos HTML nativos.",
+      "scope": [
+        "Editar somente sobre.html",
+        "Usar details e summary sem JavaScript"
+      ],
+      "acceptance_criteria": [
+        "A página apresenta três perguntas frequentes",
+        "As respostas reforçam que não existem vendas nem coleta de dados",
+        "Os controles funcionam por teclado sem JavaScript"
+      ],
+      "test_plan": [
+        "Executar python scripts/verificar_site.py",
+        "Abrir e fechar cada pergunta usando somente o teclado"
+      ],
+      "priority": "P2",
+      "risk": "LOW",
+      "suggested_profile": "agentboard_worker",
+      "expected_paths": [
+        "sobre.html"
+      ],
+      "evidence_profile": "default"
+    }
+  ],
+  "dependencies": [],
+  "groups": [
+    {
+      "id": "CONTEUDO",
+      "kind": "feature",
+      "title": "Melhorias de conteúdo",
+      "position": 0
+    }
+  ],
+  "expected_version": 0,
+  "idempotency_key": "loja-modelo-plano-inicial-001"
+}

@@ -4,6 +4,8 @@
 **Data de aprovação:** 2026-07-22  
 **Base SHA:** `3eedda66be90d49cb9d7e2910c875a990a5f731f`
 
+**Estado da implementação:** Código v1 aplicado; gate de release no macOS ainda pendente.
+
 ## Resumo
 
 Transformar o scaffold atual em um control plane completo, local-first e orientado ao Codex. As referências em `docs/ref` serão usadas apenas como inspiração visual e operacional.
@@ -24,7 +26,7 @@ O primeiro lançamento incluirá domínio, SQLite, MCP, API/SSE, dashboard, conf
 | Task | `BACKLOG`, `IN_PROGRESS`, `VERIFYING`, `DONE`, `CANCELED` | Somente o serviço altera a fase. |
 | Assignment | `RESERVED`, `ACCEPTED`, `EXPIRED`, `RELEASED` | Reserva agente, capacidade e caminhos antes do spawn. |
 | Run | `RUNNING`, `SUCCEEDED`, `FAILED`, `BLOCKED`, `STALE`, `CANCELED` | Representa uma tentativa, nunca a task inteira. |
-| Review | `PENDING`, `APPROVED`, `CHANGES_REQUESTED` | Toda task recebe decisão proporcional ao risco. |
+| Review | `PENDING`, `APPROVED`, `CHANGES_REQUESTED`, `ABANDONED` | Toda task recebe decisão proporcional ao risco; cancelamento ou lease expirado encerra reviews pendentes e libera capacidade. |
 | Blocker | `OPEN`, `RESOLVED`, `WAIVED` | Preserva motivo, responsável, fase anterior e retomada. |
 
 - `READY` será uma projeção calculada, não uma fase persistida.
@@ -117,7 +119,7 @@ O Codex continuará responsável por criar e controlar subagentes nativamente. A
 6. **Git estritamente local**
    - Criar uma branch de integração local por plano e worktrees isolados por run.
    - Gerar checkpoints por commits locais e integrar tasks aprovadas na branch do plano.
-   - Integrar o plano na branch-alvo apenas com autorização, target SHA esperado e árvore limpa.
+   - Integrar o plano na branch-alvo aprovada apenas com autorização, target SHA esperado, source SHA revisado e árvore limpa.
    - Recusar conflitos, target movido, arquivos fora do lease e repositório inseguro; nunca executar reset destrutivo ou stash automático.
    - Desabilitar hooks Git nos subprocessos do adapter e recusar filtros externos, LFS ou submódulos que possam iniciar rede.
    - Remover qualquer dependência de GitHub e bloquear comandos remotos no adapter.
@@ -153,3 +155,16 @@ O Codex continuará responsável por criar e controlar subagentes nativamente. A
 - Não haverá cloud, multi-tenant, listener público, telemetria, GitHub ou operação remota.
 - Hooks Codex são defesa adicional; a garantia principal de ausência de rede pertence ao adapter, aos perfis restritos e aos testes negativos.
 - O primeiro release público só será considerado concluído quando todas as sete etapas e o cenário E2E multiplataforma estiverem aprovados.
+
+## Registro de implementação
+
+- Domínio, SQLite, scheduler, runtime singleton, autenticação, MCP/HTTP/SSE, dashboard, configuração,
+  Git estritamente local, plugin, hooks e empacotamento foram implementados no workspace.
+- O gate Windows aprovou 77 testes Python, Ruff, 4 testes de interação da UI, lint, build e auditoria
+  de dependências sem vulnerabilidades conhecidas.
+- O gate limpo no Ubuntu/WSL repetiu Python, Ruff, UI, lint, build, auditoria e inspeção do wheel,
+  incluindo os assets estáticos do dashboard.
+- O hook aprovou 26 casos locais/negativos e o bundle do plugin passou no validador.
+- Nenhum commit, pull request ou operação Git remota foi executado durante a implementação.
+- O script `scripts/quality_gate_unix.sh` está pronto para repetir o gate no macOS; essa execução
+  permanece como requisito externo para declarar o primeiro release público multiplataforma.

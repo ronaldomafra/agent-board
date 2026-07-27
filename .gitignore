@@ -12,4 +12,5 @@ web/dist/
 web/vite.config.js
 web/vite.config.d.ts
 .agentboard/
+tests/mcp/
 .env

@@ -1,0 +1,123 @@
+schema_version: 1
+
+project:
+  name: Loja Modelo
+  config_file: agentboard.yaml
+  default_target_branch: main
+
+runtime:
+  bind_host: 127.0.0.1
+  idle_shutdown_seconds: 30
+  state_directory: .agentboard
+
+workflow:
+  task_phases: [BACKLOG, IN_PROGRESS, VERIFYING, DONE, CANCELED]
+  dependency_types: [REQUIRES, ORDER_AFTER]
+  require_human_plan_approval: true
+  canceled_dependency_requires_edge_waiver: true
+
+limits:
+  project_wip: 3
+  profile_wip:
+    agentboard_worker: 3
+    agentboard_reviewer: 1
+  reservations_consume_wip: true
+  verification_consumes_wip: true
+
+leases:
+  reservation_ttl_seconds: 120
+  run_ttl_seconds: 1800
+  heartbeat_interval_seconds: 60
+  file_paths_exclusive: true
+  generation_fencing: true
+
+scheduler:
+  order:
+    - priority
+    - critical_path
+    - downstream_unblocked
+    - plan_order
+    - task_id
+  priorities: [P0, P1, P2, P3]
+
+profiles:
+  source: .codex/agents
+  orchestrator: agentboard_orchestrator
+  worker: agentboard_worker
+  reviewer: agentboard_reviewer
+
+review:
+  tiers:
+    low:
+      reviewer: orchestrator
+      human_approval: false
+    medium:
+      reviewer: orchestrator
+      human_approval: false
+    high:
+      reviewer: independent
+      human_approval: false
+    critical:
+      reviewer: independent
+      human_approval: true
+  forbid_self_review: true
+  forbid_risk_downgrade_during_run: true
+
+evidence_profiles:
+  default:
+    require_changed_files: true
+    require_tests: true
+    require_acceptance_evidence: true
+    require_local_checkpoint: false
+    require_local_integration: false
+  code_with_git:
+    require_changed_files: true
+    require_tests: true
+    require_acceptance_evidence: true
+    require_local_checkpoint: true
+    require_local_integration: true
+
+retries:
+  transient_max_attempts: 2
+  automatic_categories:
+    - runtime_unavailable
+    - stale_heartbeat
+  decision_required_categories:
+    - test_failure
+    - logic_failure
+    - merge_conflict
+    - authorization
+    - cancellation
+
+git:
+  enabled: true
+  local_only: true
+  integration_branch_prefix: agentboard/plan/
+  worktree_directory: .agentboard/worktrees
+  checkpoint_commits: true
+  disable_hooks: true
+  forbid_remote_commands: [push, pull, fetch, clone, ls-remote]
+  forbid_commands: [reset, stash]
+  forbid_tools: [gh]
+  reject_external_filters: true
+  reject_lfs: true
+  reject_submodules: true
+  require_clean_target: true
+  require_expected_target_sha: true
+  require_expected_source_sha: true
+  require_approved_target_branch: true
+  require_path_lease: true
+
+paths:
+  database: .agentboard/agentboard.db
+  backups: .agentboard/backups
+  runtime_metadata: .agentboard/runtime.json
+  runtime_lock: .agentboard/runtime.lock
+  plan_source: docs/PROJECT_BRIEF.md
+
+compatibility:
+  legacy_state_projection:
+    READY: computed_eligible
+    ASSIGNED: active_assignment
+    BLOCKED: open_blocker
+    REWORK: changes_requested

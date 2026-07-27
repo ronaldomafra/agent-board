@@ -1,0 +1,9 @@
+name = "agentboard_worker"
+description = "Implementa uma tarefa da Loja Modelo dentro de uma reserva exclusiva."
+model_reasoning_effort = "medium"
+developer_instructions = """
+Implemente somente a tarefa atribuída e respeite os caminhos reservados.
+Não adicione dependências ou recursos externos ao site.
+Relate arquivos alterados, validações, evidência de aceitação e riscos.
+Não altere o estado de tarefas nem arquivos pertencentes a outro agente.
+"""

@@ -2,7 +2,7 @@
 
 ## 1. Product definition
 
-AgentBoard is a local-first control plane for AI development agents. A Codex plugin supplies orchestration guidance and MCP configuration. A Python process exposes MCP over stdio and a localhost dashboard over HTTP. The dashboard exists while the Codex session is active in the MVP; SQLite preserves operational state between sessions.
+AgentBoard is a local-first control plane for AI development agents. A Codex plugin supplies orchestration guidance and MCP configuration. A thin MCP stdio bridge discovers one project runtime, which owns SQLite plus the loopback HTTP/SSE dashboard. SQLite preserves operational state between sessions; the runtime exits after the last MCP client disappears and the configured grace period elapses.
 
 ## 2. Product boundaries
 
@@ -11,7 +11,7 @@ AgentBoard is a local-first control plane for AI development agents. A Codex plu
 - Task board, dependencies, WIP, leases, agent heartbeats and execution evidence.
 - Project-local SQLite persistence and Git-versioned configuration.
 - MCP tools for Codex and an HTTP/SSE dashboard for humans.
-- Optional Git/worktree and GitHub adapters after the core flow is stable.
+- Strictly local Git branches, worktrees, checkpoints and reviewed integration.
 
 ### Out of scope for v1
 
@@ -34,9 +34,14 @@ The Python `domain` and `service` layers own state-machine rules. `mcp_server` a
 
 Normal flow:
 
-`BACKLOG -> READY -> ASSIGNED -> IN_PROGRESS -> VERIFYING -> DONE`
+Persisted phases are `BACKLOG -> IN_PROGRESS -> VERIFYING -> DONE`, plus `CANCELED`.
 
-Exception states: `BLOCKED`, `REWORK`, `CANCELED`.
+`READY` is computed eligibility, `ASSIGNED` is an active reservation, `BLOCKED` is an open blocker
+record and `REWORK` is a prior `CHANGES_REQUESTED` decision. They are projections, not additional
+task phases.
+
+A pending review becomes `ABANDONED` when its task is canceled or its verification lease expires.
+The service records the reason and releases reviewer/worker instance capacity transactionally.
 
 `deviation` is a computed alert, not a task state. Examples: expired lease, WIP violation, missing dependency, invalid transition, stale heartbeat or missing evidence.
 
@@ -57,8 +62,8 @@ Use SQLite WAL mode. Every state-changing operation runs in one transaction and 
 Prioritize workflow tools instead of raw table CRUD:
 
 - `project_open`, `board_snapshot`, `task_get`, `task_list`
-- `task_claim`, `task_heartbeat`, `task_transition`, `task_block`
-- `task_report_result`, `run_start`, `run_finish`
+- `task_claim`, `task_release_reservation`, `run_start`, `task_heartbeat`, `task_block`
+- `task_report_result`, `run_fail`, `review_claim`, `review_start`, `review_decide`
 - `config_get`, `config_validate`, `config_apply_draft`, `dashboard_open`
 
 Read tools are safe. Write tools must use explicit schemas, actionable errors and accurate MCP safety annotations. `task_claim` validates dependency resolution, WIP and an exclusive lease atomically.
@@ -106,7 +111,7 @@ Use SSE for server-to-browser events in v1. Drag-and-drop requests a transition;
 
 ### Milestone 5 — Integrations and distribution
 
-- Git/worktree adapter, optional GitHub evidence adapter, packaging, documentation and evaluation scenarios.
+- Local-only Git/worktree adapter, packaging, documentation and evaluation scenarios.
 - Acceptance: plugin install and local project bootstrap work from a clean environment.
 
 ## 9. Quality gates
@@ -121,6 +126,6 @@ Use SSE for server-to-browser events in v1. Drag-and-drop requests a transition;
 
 - Adding cloud synchronization, authentication, telemetry or public network listeners.
 - Changing the task state graph or relaxing evidence/lease rules.
-- Executing Git commands that write, create pull requests, merge or deploy.
+- Relaxing the local Git adapter, permitting remote Git, creating pull requests or deploying.
 - Replacing SQLite with a server database.
 

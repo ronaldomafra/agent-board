@@ -1,25 +1,26 @@
 {
   "name": "agent-board",
   "version": "0.1.0",
-  "description": "Local-first task orchestration and dashboard for Codex development agents.",
+  "description": "Local-first control plane for planning, scheduling and reviewing Codex development agents.",
   "author": {
-    "name": "Ronaldo Mafra",
-    "url": "https://github.com/ronaldomafra"
+    "name": "Ronaldo Mafra"
   },
-  "homepage": "https://github.com/ronaldomafra/agent-board",
-  "repository": "https://github.com/ronaldomafra/agent-board",
   "license": "Apache-2.0",
   "keywords": ["codex", "mcp", "multi-agent", "tasks", "kanban"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "AgentBoard",
-    "shortDescription": "Control tasks and agents locally.",
-    "longDescription": "A local-first task board, MCP server and orchestration workflow for Codex development agents.",
+    "shortDescription": "Orchestrate Codex agents locally.",
+    "longDescription": "Plan, schedule, lease, review and audit Codex development work through a project-local MCP server and dashboard.",
     "developerName": "Ronaldo Mafra",
     "category": "Productivity",
-    "capabilities": ["Read", "Write"],
-    "defaultPrompt": "Open AgentBoard for this project and show the tasks ready to start."
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "Open AgentBoard and show the next eligible tasks.",
+      "Coordinate this approved plan with Codex agents.",
+      "Review AgentBoard runs that need attention."
+    ]
   }
 }
 
