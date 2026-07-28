@@ -5,14 +5,14 @@ não acessa Git remoto e não cria pull requests.
 
 O plugin possui duas partes:
 
-1. o comando Python `agentboard`, usado pelo servidor MCP;
+1. o comando Python `agentboard`, usado pelo servidor MCP e pelos hooks;
 2. o bundle do Codex, com manifesto, skill, configuração MCP e hooks.
 
 ## Pré-requisitos
 
 - Python 3.11 ou superior;
 - Codex CLI com o comando `codex plugin`;
-- Git local;
+- Git local somente quando a política do projeto habilitar operações Git locais;
 - Node.js LTS e npm somente quando for necessário reconstruir o dashboard.
 
 Os comandos abaixo usam PowerShell no Windows. Em Linux ou macOS, use `python3`, caminhos POSIX e o
@@ -32,10 +32,21 @@ $UserScripts = python -c "import sysconfig; print(sysconfig.get_path('scripts', 
 $env:Path = "$UserScripts;$env:Path"
 
 agentboard --help
+agentboard codex-hook --self-test
 ```
 
 O ajuste acima vale para o terminal atual. Para usar o Codex no aplicativo desktop, adicione
-permanentemente o valor exibido em `$UserScripts` ao `PATH` do usuário e reinicie o aplicativo.
+permanentemente o valor exibido em `$UserScripts` ao `PATH` do usuário, feche todas as janelas do
+Codex e abra o aplicativo novamente. Confirme em um novo PowerShell:
+
+```powershell
+Get-Command agentboard
+agentboard codex-hook --self-test
+```
+
+Não é necessário ativar uma `.venv` para usar o plugin nesse modelo. O ambiente virtual continua
+útil para desenvolver e testar o repositório, mas o Codex Desktop usa o executável instalado no
+`PATH` do usuário.
 
 Para um teste restrito ao terminal, também é possível usar o ambiente virtual do projeto:
 
@@ -65,7 +76,6 @@ dist/agentboard-marketplace/
     ├── .codex-plugin/plugin.json
     ├── .mcp.json
     ├── hooks/
-    ├── scripts/
     └── skills/
 ```
 
@@ -100,7 +110,12 @@ automaticamente em hooks distribuídos por plugins. Quando solicitado:
 
 O hook ativa a proteção local do AgentBoard e bloqueia tentativas comuns de Git remoto ou
 destrutivo. Ele é uma defesa adicional; o serviço de domínio e o adapter Git continuam sendo as
-autoridades.
+autoridades. Os dois eventos usam o mesmo CLI instalado:
+
+```text
+SessionStart -> agentboard codex-hook --activate
+PreToolUse   -> agentboard codex-hook
+```
 
 ## 4. Verificar a instalação
 
@@ -169,10 +184,14 @@ esses dados separadamente, depois de confirmar o projeto correto.
 
 - **`agentboard` não encontrado:** confirme o diretório de scripts do Python no `PATH` do processo
   que inicia o Codex.
+- **`SessionStart hook (failed)` ou `PreToolUse hook (failed)`:** execute
+  `Get-Command agentboard` e `agentboard codex-hook --self-test` em um novo PowerShell. Se ambos
+  funcionarem, feche todas as janelas do Codex e reabra o aplicativo para ele herdar o novo
+  `PATH`.
 - **MCP não aparece:** confirme `codex plugin list`, verifique se o plugin está habilitado e abra uma
   nova sessão.
-- **Claim Git recusado por proteção ausente:** revise e autorize os hooks, confirme que `python`
-  está no `PATH` e reinicie a sessão.
+- **Claim Git recusado por proteção ausente:** revise e autorize os hooks, confirme que
+  `agentboard` está no `PATH` e reinicie a sessão.
 - **Dashboard sem alterações recentes:** execute `npm run build` em `web/` e reinstale o pacote
   Python.
 - **Marketplace já registrado:** não o adicione novamente; apenas gere um novo bundle, aplique o

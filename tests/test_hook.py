@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import os
@@ -11,24 +10,24 @@ from pathlib import Path
 
 import pytest
 
-from agentboard.hook_guard import hook_protection_status
+from agentboard import codex_hook, hook_guard
 
-CODEX_HOOK_PATH = Path(__file__).parents[1] / "scripts" / "codex_hook.py"
-CODEX_HOOK_SPEC = importlib.util.spec_from_file_location(
-    "agentboard_codex_hook",
-    CODEX_HOOK_PATH,
-)
-assert CODEX_HOOK_SPEC is not None
-assert CODEX_HOOK_SPEC.loader is not None
-codex_hook = importlib.util.module_from_spec(CODEX_HOOK_SPEC)
-CODEX_HOOK_SPEC.loader.exec_module(codex_hook)
+PROJECT_ROOT = Path(__file__).parents[1]
+HOOK_CONFIG_PATH = PROJECT_ROOT / "hooks" / "hooks.json"
+
+
+def _project(path: Path) -> Path:
+    path.mkdir()
+    (path / "agentboard.yaml").write_text("schema_version: 1\n", encoding="utf-8")
+    return path
 
 
 def run_hook(
     project: Path,
     command: str,
+    *,
+    plugin_root: Path = PROJECT_ROOT,
 ) -> subprocess.CompletedProcess[str]:
-    plugin_root = Path(__file__).parents[1]
     environment = os.environ.copy()
     environment["PLUGIN_ROOT"] = str(plugin_root)
     payload = {
@@ -39,7 +38,7 @@ def run_hook(
         "tool_input": {"command": command},
     }
     return subprocess.run(
-        [sys.executable, str(plugin_root / "scripts" / "codex_hook.py")],
+        [sys.executable, "-m", "agentboard.cli", "codex-hook"],
         cwd=project,
         input=json.dumps(payload),
         capture_output=True,
@@ -50,20 +49,19 @@ def run_hook(
     )
 
 
-def test_installed_hook_uses_plugin_root_and_emits_supported_denial(
+def test_installed_hook_uses_agentboard_cli_and_emits_supported_denial(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / ".git").mkdir()
-    hook_config = json.loads(
-        (Path(__file__).parents[1] / "hooks" / "hooks.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    handlers = hook_config["hooks"]["PreToolUse"][0]["hooks"][0]
-    assert "$PLUGIN_ROOT" in handlers["command"]
-    assert "%PLUGIN_ROOT%" in handlers["commandWindows"]
+    project = _project(tmp_path / "project")
+    hook_config = json.loads(HOOK_CONFIG_PATH.read_text(encoding="utf-8"))
+    session_handler = hook_config["hooks"]["SessionStart"][0]["hooks"][0]
+    pre_tool_handler = hook_config["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert session_handler["command"] == "agentboard codex-hook --activate"
+    assert session_handler["commandWindows"] == "agentboard codex-hook --activate"
+    assert pre_tool_handler["command"] == "agentboard codex-hook"
+    assert pre_tool_handler["commandWindows"] == "agentboard codex-hook"
 
-    blocked = run_hook(tmp_path, "git commit -m bypass")
+    blocked = run_hook(project, "git commit -m bypass")
 
     assert blocked.returncode == 0
     output = json.loads(blocked.stdout)
@@ -72,50 +70,101 @@ def test_installed_hook_uses_plugin_root_and_emits_supported_denial(
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert "continue" not in output
     assert "stopReason" not in output
-    assert hook_protection_status(tmp_path)["active"] is True
+    protection = hook_guard.hook_protection_status(project)
+    assert protection["active"] is True
+    marker = json.loads(
+        (project / ".agentboard" / "hook-protection.json").read_text(encoding="utf-8")
+    )
+    assert marker["schema_version"] == 2
+    assert marker["handler_path"] == str(Path(codex_hook.__file__).resolve())
+    assert len(marker["script_hash"]) == 64
+    assert len(marker["hook_config_hash"]) == 64
 
-    allowed = run_hook(tmp_path, "git status --short")
+    allowed = run_hook(project, "git status --short")
     assert allowed.returncode == 0
     assert allowed.stdout == ""
 
 
-def test_hook_protection_rejects_a_marker_after_installed_script_changes(
+def test_hook_protection_rejects_changed_installed_handler(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / ".git").mkdir()
+    project = _project(tmp_path / "project")
     plugin_copy = tmp_path / "plugin"
-    (plugin_copy / "scripts").mkdir(parents=True)
-    shutil.copy2(
-        Path(__file__).parents[1] / "scripts" / "codex_hook.py",
-        plugin_copy / "scripts" / "codex_hook.py",
-    )
-    environment = os.environ.copy()
-    environment["PLUGIN_ROOT"] = str(plugin_copy)
-    payload = {
-        "session_id": "hook-test-session",
-        "cwd": str(project),
-        "hook_event_name": "SessionStart",
-    }
-    subprocess.run(
-        [sys.executable, str(plugin_copy / "scripts" / "codex_hook.py"), "--activate"],
-        cwd=project,
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        env=environment,
-        check=True,
-    )
-    assert hook_protection_status(project)["active"] is True
+    (plugin_copy / "hooks").mkdir(parents=True)
+    shutil.copy2(HOOK_CONFIG_PATH, plugin_copy / "hooks" / "hooks.json")
+    handler_copy = tmp_path / "codex_hook.py"
+    shutil.copy2(Path(codex_hook.__file__), handler_copy)
+    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_copy))
+    monkeypatch.setattr(codex_hook, "_handler_path", lambda: handler_copy)
+    monkeypatch.setattr(hook_guard, "_handler_path", lambda: handler_copy)
 
-    with (plugin_copy / "scripts" / "codex_hook.py").open("a", encoding="utf-8") as stream:
+    codex_hook.record_activation(
+        {
+            "session_id": "hook-test-session",
+            "cwd": str(project),
+            "hook_event_name": "SessionStart",
+        }
+    )
+    assert hook_guard.hook_protection_status(project)["active"] is True
+
+    with handler_copy.open("a", encoding="utf-8") as stream:
         stream.write("\n# changed after activation\n")
 
-    assert hook_protection_status(project) == {
+    assert hook_guard.hook_protection_status(project) == {
         "active": False,
         "reason": "hook_script_changed",
+    }
+
+
+def test_hook_protection_rejects_changed_hook_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path / "project")
+    plugin_copy = tmp_path / "plugin"
+    (plugin_copy / "hooks").mkdir(parents=True)
+    copied_config = plugin_copy / "hooks" / "hooks.json"
+    shutil.copy2(HOOK_CONFIG_PATH, copied_config)
+    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_copy))
+
+    codex_hook.record_activation(
+        {
+            "session_id": "hook-test-session",
+            "cwd": str(project),
+            "hook_event_name": "SessionStart",
+        }
+    )
+    assert hook_guard.hook_protection_status(project)["active"] is True
+
+    copied_config.write_text("{}\n", encoding="utf-8")
+
+    assert hook_guard.hook_protection_status(project) == {
+        "active": False,
+        "reason": "hook_config_changed",
+    }
+
+
+def test_schema_one_marker_is_rejected_as_outdated(tmp_path: Path) -> None:
+    project = _project(tmp_path / "project")
+    runtime = project / ".agentboard"
+    runtime.mkdir()
+    (runtime / "hook-protection.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "activated_at": "2026-07-28T12:00:00+00:00",
+                "session_id": "old",
+                "plugin_root": str(PROJECT_ROOT),
+                "script_hash": "0" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert hook_guard.hook_protection_status(project) == {
+        "active": False,
+        "reason": "activation_marker_outdated",
     }
 
 
@@ -133,10 +182,9 @@ def test_session_start_survives_unwritable_activation_marker(
         raise PermissionError("activation marker is not writable")
 
     monkeypatch.setattr(codex_hook, "record_activation", fail_activation)
-    monkeypatch.setattr(sys, "argv", ["codex_hook.py", "--activate"])
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
 
-    assert codex_hook.main() == 0
+    assert codex_hook.run(activate=True) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
@@ -158,11 +206,24 @@ def test_pre_tool_use_still_denies_when_activation_marker_is_unwritable(
         raise PermissionError("activation marker is not writable")
 
     monkeypatch.setattr(codex_hook, "record_activation", fail_activation)
-    monkeypatch.setattr(sys, "argv", ["codex_hook.py"])
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
 
-    assert codex_hook.main() == 0
+    assert codex_hook.run() == 0
     captured = capsys.readouterr()
     output = json.loads(captured.out)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert captured.err == ""
+
+
+def test_codex_hook_self_test_is_available_through_main_cli() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "agentboard.cli", "codex-hook", "--self-test"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"ok": True, "cases": 26}

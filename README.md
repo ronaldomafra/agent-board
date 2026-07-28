@@ -52,8 +52,8 @@ uv run agentboard --help
 ```
 
 Para usar o plugin no Codex, instale o CLI no ambiente que inicia o Codex e gere o marketplace
-local compacto. O arquivo `.mcp.json` chama diretamente `agentboard mcp`; ele não usa `uvx` nem
-baixa pacotes durante a sessão.
+local compacto. O MCP chama `agentboard mcp` e os hooks chamam `agentboard codex-hook`; nenhum
+deles usa `uvx`, um alias `python` ou baixa pacotes durante a sessão.
 
 O procedimento completo, incluindo o marketplace local, confiança dos hooks e atualização do
 bundle, está em [docs/PLUGIN_INSTALLATION.md](docs/PLUGIN_INSTALLATION.md).
@@ -93,7 +93,7 @@ Para validar o bundle do plugin:
 
 ```bash
 python "/path/to/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py" .
-python scripts/codex_hook.py --self-test
+agentboard codex-hook --self-test
 ```
 
 Consulte [docs/OPERATIONS.md](docs/OPERATIONS.md) para bootstrap, recuperação, backup e segurança,

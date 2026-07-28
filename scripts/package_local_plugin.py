@@ -54,11 +54,6 @@ def _copy_bundle(staging_root: Path) -> None:
         PROJECT_ROOT / "skills" / "agentboard-orchestrate",
         plugin_root / "skills" / "agentboard-orchestrate",
     )
-    (plugin_root / "scripts").mkdir()
-    shutil.copy2(
-        PROJECT_ROOT / "scripts" / "codex_hook.py",
-        plugin_root / "scripts" / "codex_hook.py",
-    )
 
     marketplace_path = staging_root / ".agents" / "plugins" / "marketplace.json"
     marketplace_path.parent.mkdir(parents=True)

@@ -50,8 +50,9 @@ uv run agentboard --help
 O build Vite grava diretamente em `src/agentboard/static`, que é o bundle servido e empacotado pelo
 runtime. Assim, um build aprovado não pode deixar o backend apontando para assets antigos.
 
-O plugin declara `agentboard mcp` diretamente. Instale o wheel ou o CLI no ambiente que inicia o
-Codex antes de habilitar o plugin. O funcionamento normal não pode depender de download via `uvx`.
+O plugin declara `agentboard mcp` e `agentboard codex-hook` diretamente. Instale o wheel ou o CLI
+no ambiente que inicia o Codex antes de habilitar o plugin. O funcionamento normal não depende de
+download via `uvx`, de alias `python` ou da ativação manual de uma `.venv`.
 
 Desenvolvimento do dashboard pode usar Vite separadamente, mas o backend e o proxy devem continuar
 em loopback:
@@ -113,8 +114,9 @@ São proibidos:
 O hook em `hooks/hooks.json` bloqueia tentativas comuns no shell. Ele é defesa em profundidade:
 wrappers ou ferramentas não reconhecidas podem escapar do matcher, portanto não substitui o adapter,
 as capabilities, os perfis restritos nem testes de ausência de rede. O `SessionStart` registra em
-`.agentboard/hook-protection.json` o hash do script efetivamente carregado pelo plugin; claims com
-Git habilitado são recusados se o marcador estiver ausente, vencido ou se o script tiver mudado.
+`.agentboard/hook-protection.json` os hashes do módulo instalado e da configuração de hooks
+efetivamente carregada; claims com Git habilitado são recusados se o marcador estiver ausente,
+vencido ou se qualquer um desses componentes tiver mudado.
 
 ## Dashboard e segurança de localhost
 
@@ -175,7 +177,7 @@ runs ativos e leases antes de aceitar novos claims.
 
 ```bash
 python "/path/to/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py" .
-python scripts/codex_hook.py --self-test
+agentboard codex-hook --self-test
 ```
 
 O primeiro comando valida o manifesto e seus componentes; o segundo demonstra decisões esperadas

@@ -10,30 +10,19 @@ import time
 import webbrowser
 from pathlib import Path
 
-import uvicorn
-import yaml
-
-from agentboard.client import RuntimeClient
-from agentboard.config import default_config, find_project_root, load_config
-from agentboard.domain import Actor, DomainError
-from agentboard.mcp_server import run as run_mcp
-from agentboard.runtime import (
-    RuntimeAlreadyRunningError,
-    RuntimeLock,
-    RuntimeMetadata,
-    discover_runtime,
-    ensure_runtime,
-    project_identity,
-    remove_metadata,
-    write_metadata,
-)
-from agentboard.web import create_app
-
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentboard")
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("mcp", help="Run the thin MCP bridge over stdio.")
+
+    codex_hook = subcommands.add_parser(
+        "codex-hook",
+        help="Run the Codex lifecycle hook installed with AgentBoard.",
+    )
+    hook_mode = codex_hook.add_mutually_exclusive_group()
+    hook_mode.add_argument("--activate", action="store_true")
+    hook_mode.add_argument("--self-test", action="store_true")
 
     runtime = subcommands.add_parser("runtime", help="Own the local project runtime.")
     runtime.add_argument("--project", type=Path, default=Path.cwd())
@@ -64,6 +53,19 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _runtime(project: Path, port: int) -> int:
+    import uvicorn
+
+    from agentboard.domain import Actor, DomainError
+    from agentboard.runtime import (
+        RuntimeAlreadyRunningError,
+        RuntimeLock,
+        RuntimeMetadata,
+        project_identity,
+        remove_metadata,
+        write_metadata,
+    )
+    from agentboard.web import create_app
+
     identity = project_identity(project)
     nonce = secrets.token_urlsafe(24)
     lock = RuntimeLock(identity, nonce)
@@ -145,6 +147,9 @@ def _runtime(project: Path, port: int) -> int:
 
 
 def _dashboard(project: Path, no_browser: bool) -> int:
+    from agentboard.client import RuntimeClient
+    from agentboard.runtime import ensure_runtime
+
     runtime = ensure_runtime(project)
     response = RuntimeClient(runtime).post("/api/v1/dashboard/bootstrap", {})
     url = f"{runtime.base_url}{response['path']}"
@@ -155,6 +160,8 @@ def _dashboard(project: Path, no_browser: bool) -> int:
 
 
 def _status(project: Path) -> int:
+    from agentboard.runtime import discover_runtime
+
     runtime = discover_runtime(project)
     if runtime is None:
         print(json.dumps({"status": "stopped"}, indent=2))
@@ -175,6 +182,10 @@ def _status(project: Path) -> int:
 
 
 def _init(project: Path, name: str | None) -> int:
+    import yaml
+
+    from agentboard.config import default_config, find_project_root
+
     root = find_project_root(project)
     target = root / "agentboard.yaml"
     if target.exists():
@@ -195,6 +206,8 @@ def _init(project: Path, name: str | None) -> int:
 
 
 def _validate_config(project: Path) -> int:
+    from agentboard.config import find_project_root, load_config
+
     root = find_project_root(project)
     config = load_config(root / "agentboard.yaml")
     print(
@@ -212,7 +225,18 @@ def _validate_config(project: Path) -> int:
 
 def main() -> None:
     args = _parser().parse_args()
+    if args.command == "codex-hook":
+        from agentboard.codex_hook import run as run_codex_hook
+
+        raise SystemExit(
+            run_codex_hook(
+                activate=args.activate,
+                self_test=args.self_test,
+            )
+        )
     if args.command == "mcp":
+        from agentboard.mcp_server import run as run_mcp
+
         run_mcp()
         return
     if args.command in {"runtime", "serve"}:

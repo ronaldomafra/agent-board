@@ -51,7 +51,7 @@ def test_package_local_plugin_creates_compact_marketplace(tmp_path: Path) -> Non
     assert manifest["name"] == "agent-board"
     assert (plugin_root / ".mcp.json").is_file()
     assert (plugin_root / "hooks" / "hooks.json").is_file()
-    assert (plugin_root / "scripts" / "codex_hook.py").is_file()
+    assert not (plugin_root / "scripts").exists()
     assert (plugin_root / "skills" / "agentboard-orchestrate" / "SKILL.md").is_file()
     assert not (plugin_root / "src").exists()
     assert not (plugin_root / "tests").exists()

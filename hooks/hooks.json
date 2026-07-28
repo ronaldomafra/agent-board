@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$PLUGIN_ROOT/scripts/codex_hook.py\" --activate",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\scripts\\codex_hook.py\" --activate",
+            "command": "agentboard codex-hook --activate",
+            "commandWindows": "agentboard codex-hook --activate",
             "timeout": 10
           }
         ]
@@ -19,8 +19,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$PLUGIN_ROOT/scripts/codex_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\scripts\\codex_hook.py\"",
+            "command": "agentboard codex-hook",
+            "commandWindows": "agentboard codex-hook",
             "timeout": 10
           }
         ]
