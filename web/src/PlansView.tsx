@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  approvePlan,
+  createIdempotencyKey,
   getPlan,
   getPlans,
+  planApprovalResource,
+  requestHumanAuthorization,
   validatePlan,
   type Plan,
   type PlanRevision,
   type PlanValidation,
 } from "./api";
+
+interface PlansViewProps {
+  onApproved: () => void | Promise<void>;
+}
 
 function planKey(plan: Plan): string {
   return `${plan.id}:${plan.revision}`;
@@ -26,7 +34,7 @@ function messageFrom(reason: unknown): string {
   return reason instanceof Error ? reason.message : "Não foi possível carregar os planos.";
 }
 
-export function PlansView() {
+export function PlansView({ onApproved }: PlansViewProps) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PlanRevision | null>(null);
@@ -34,6 +42,10 @@ export function PlansView() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [approvalRequestKey, setApprovalRequestKey] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -47,6 +59,8 @@ export function PlansView() {
           return active ? planKey(active) : items[0] ? planKey(items[0]) : null;
         });
         setError(null);
+        setConfirmed(false);
+        setApprovalRequestKey(null);
       })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -102,6 +116,45 @@ export function PlansView() {
   const metrics = validation?.graph_metrics
     ? Object.entries(validation.graph_metrics)
     : [];
+  const canApprove = Boolean(
+    detail &&
+      validation?.valid &&
+      detail.status === "DRAFT" &&
+      detail.version !== undefined &&
+      confirmed &&
+      !detailLoading &&
+      !approving,
+  );
+
+  const approveSelected = async () => {
+    if (!detail || !canApprove || detail.version === undefined) return;
+    setApproving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const idempotencyKey =
+        approvalRequestKey ?? createIdempotencyKey("plan-approve");
+      setApprovalRequestKey(idempotencyKey);
+      const authorization = await requestHumanAuthorization(
+        "plan_approve",
+        planApprovalResource(detail.id, detail.revision, detail.version),
+      );
+      const result = await approvePlan(
+        detail,
+        authorization.capability_token,
+        idempotencyKey,
+      );
+      setConfirmed(false);
+      setApprovalRequestKey(null);
+      setNotice(`Revisão aprovada e ativada como ${result.state}.`);
+      setReload((value) => value + 1);
+      await onApproved();
+    } catch (reason) {
+      setError(messageFrom(reason));
+    } finally {
+      setApproving(false);
+    }
+  };
 
   return (
     <section className="plans-view" aria-labelledby="plans-title">
@@ -125,6 +178,12 @@ export function PlansView() {
         <div className="inline-message error" role="alert">
           <strong>Planos indisponíveis</strong>
           <span>{error}</span>
+        </div>
+      )}
+      {notice && (
+        <div className="inline-message success" role="status">
+          <strong>Plano</strong>
+          <span>{notice}</span>
         </div>
       )}
 
@@ -198,6 +257,37 @@ export function PlansView() {
                     <div><dt>Validação</dt><dd>{validation?.valid ? "Válida" : "—"}</dd></div>
                   </dl>
                 </header>
+
+                <section className="plan-approval" aria-labelledby="plan-approval-title">
+                  <div>
+                    <h4 id="plan-approval-title">Aprovação humana</h4>
+                    <p>
+                      Autoriza {detail.id} · revisão {detail.revision} · versão {detail.version ?? "—"}.
+                    </p>
+                  </div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      disabled={
+                        detail.status !== "DRAFT" ||
+                        !validation?.valid ||
+                        detail.version === undefined ||
+                        detailLoading ||
+                        approving
+                      }
+                      onChange={(event) => setConfirmed(event.target.checked)}
+                    />
+                    Revisei esta revisão e autorizo sua aprovação.
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={!canApprove}
+                    onClick={() => void approveSelected()}
+                  >
+                    {approving ? "Aprovando…" : "Autorizar e aprovar"}
+                  </button>
+                </section>
 
                 {metrics.length > 0 && (
                   <div className="plan-metrics" aria-label="Métricas do grafo">

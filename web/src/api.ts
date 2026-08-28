@@ -100,6 +100,20 @@ export interface Run {
   finished_at?: string;
   latest_checkpoint?: string;
   failure_reason?: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+  completed_at?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  completed_duration_seconds: number;
+  reported_runs: number;
+  completed_runs: number;
 }
 
 export interface Plan {
@@ -224,6 +238,7 @@ export interface BoardSnapshot {
   };
   agents: Agent[];
   runs: Run[];
+  usage_totals?: UsageTotals;
   last_event_id?: string | number | null;
   wip?: { active: number; limit: number };
 }
@@ -256,6 +271,15 @@ const emptyAttention = {
   conflicts: [],
 };
 
+const emptyUsageTotals: UsageTotals = {
+  input_tokens: 0,
+  output_tokens: 0,
+  total_tokens: 0,
+  completed_duration_seconds: 0,
+  reported_runs: 0,
+  completed_runs: 0,
+};
+
 function normalizedSnapshot(value: Partial<BoardSnapshot>): BoardSnapshot {
   return {
     project: value.project ?? { name: "Projeto local" },
@@ -266,6 +290,7 @@ function normalizedSnapshot(value: Partial<BoardSnapshot>): BoardSnapshot {
     attention: { ...emptyAttention, ...value.attention },
     agents: value.agents ?? [],
     runs: value.runs ?? [],
+    usage_totals: value.usage_totals ?? emptyUsageTotals,
     last_event_id: value.last_event_id,
     wip: value.wip,
   };
@@ -300,7 +325,17 @@ export class ApiError extends Error {
 }
 
 function csrfToken(): string {
-  const prefix = "agentboard_csrf=";
+  const projectKey = new URLSearchParams(
+    typeof window === "undefined" ? "" : window.location.search,
+  ).get("project") ?? cookieProjectKey();
+  if (!projectKey || !/^[A-Za-z0-9_-]+$/.test(projectKey)) {
+    throw new ApiError(
+      "A sessão local não identifica o projeto. Reabra o dashboard pelo runtime.",
+      401,
+      "PROJECT_MISSING",
+    );
+  }
+  const prefix = `agentboard_csrf_${projectKey}=`;
   const cookie = document.cookie
     .split(";")
     .map((part) => part.trim())
@@ -313,6 +348,14 @@ function csrfToken(): string {
     );
   }
   return decodeURIComponent(cookie.slice(prefix.length));
+}
+
+function cookieProjectKey(): string | null {
+  const matches = document.cookie
+    .split(";")
+    .map((part) => part.trim().match(/^agentboard_csrf_([A-Za-z0-9_-]+)=/))
+    .filter((match): match is RegExpMatchArray => match !== null);
+  return matches.length === 1 ? matches[0][1] : null;
 }
 
 async function responseError(response: Response): Promise<ApiError> {
@@ -484,6 +527,36 @@ export function requestHumanAuthorization(
     operation,
     resource_id: resourceId,
   });
+}
+
+export function planApprovalResource(
+  planId: string,
+  revision: number,
+  expectedVersion: number,
+): string {
+  return `plan:${planId}:revision:${revision}:version:${expectedVersion}`;
+}
+
+export function approvePlan(
+  plan: Pick<Plan, "id" | "revision" | "version">,
+  capabilityToken: string,
+  idempotencyKey: string,
+): Promise<CommandResult> {
+  if (plan.version === undefined) {
+    throw new ApiError(
+      "A revisão não possui versão; atualize antes de aprová-la.",
+      409,
+      "VERSION_MISSING",
+    );
+  }
+  return browserMutation<CommandResult>(
+    `/api/v1/plans/${encodeURIComponent(plan.id)}/revisions/${plan.revision}/approve`,
+    {
+      expected_version: plan.version,
+      idempotency_key: idempotencyKey,
+    },
+    capabilityToken,
+  );
 }
 
 export function applyConfigDraft(

@@ -69,6 +69,49 @@ def _actor(value: Actor | str) -> Actor:
     return value
 
 
+def _usage_values(usage: dict[str, Any] | None) -> tuple[int | None, int | None]:
+    """Normalize terminal token usage before it reaches operational storage."""
+    if usage is None:
+        return None, None
+    expected = {"input_tokens", "output_tokens"}
+    if set(usage) != expected:
+        raise PolicyViolationError(
+            "Usage must contain exactly input_tokens and output_tokens."
+        )
+    values = tuple(usage[name] for name in ("input_tokens", "output_tokens"))
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in values
+    ):
+        raise PolicyViolationError("Token usage values must be non-negative integers.")
+    return values[0], values[1]
+
+
+def _run_projection(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    """Add derived usage fields while keeping SQLite rows as the canonical source."""
+    result = dict(row)
+    input_tokens = result.get("input_tokens")
+    output_tokens = result.get("output_tokens")
+    result["total_tokens"] = (
+        input_tokens + output_tokens
+        if input_tokens is not None and output_tokens is not None
+        else None
+    )
+    completed_at = result.get("completed_at")
+    if completed_at is None:
+        result["duration_seconds"] = None
+        return result
+    try:
+        duration = datetime.fromisoformat(completed_at) - datetime.fromisoformat(
+            result["started_at"]
+        )
+    except (TypeError, ValueError):
+        result["duration_seconds"] = None
+    else:
+        result["duration_seconds"] = max(0, int(duration.total_seconds()))
+    return result
+
+
 def _normalized_path(value: str) -> str:
     cleaned = value.strip().replace("\\", "/")
     while cleaned.startswith("./"):
@@ -1860,14 +1903,17 @@ class BoardService:
         idempotency_key: str,
         summary: str | None = None,
         checkpoint_sha: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> CommandResult:
         payload = {
             "task_id": task_id, "run_id": run_id, "lease_generation": lease_generation,
             "evidence": evidence, "summary": summary,
-            "checkpoint_sha": checkpoint_sha, "expected_version": expected_version,
+            "checkpoint_sha": checkpoint_sha, "usage": usage,
+            "expected_version": expected_version,
         }
 
         def action(connection: sqlite3.Connection, principal: Actor) -> CommandResult:
+            input_tokens, output_tokens = _usage_values(usage)
             task = self._task_row(connection, task_id)
             self._version(task, expected_version)
             run, _ = self._active_run(
@@ -1951,10 +1997,11 @@ class BoardService:
             connection.execute(
                 """
                 UPDATE runs
-                SET status='SUCCEEDED', result_summary=?, finished_at=?
+                SET status='SUCCEEDED', result_summary=?, finished_at=?,
+                    input_tokens=?, output_tokens=?
                 WHERE id=?
                 """,
-                (summary, _iso(), run_id),
+                (summary, _iso(), input_tokens, output_tokens, run_id),
             )
             review_id = _id()
             connection.execute(
@@ -2238,6 +2285,7 @@ class BoardService:
         expected_version: int,
         actor: Actor | str,
         idempotency_key: str,
+        usage: dict[str, Any] | None = None,
     ) -> CommandResult:
         return self._end_run(
             task_id,
@@ -2247,6 +2295,7 @@ class BoardService:
             failure_kind,
             reason,
             expected_version=expected_version, actor=actor, idempotency_key=idempotency_key,
+            usage=usage,
         )
 
     def task_block(
@@ -2260,20 +2309,28 @@ class BoardService:
         actor: Actor | str,
         idempotency_key: str,
         owner: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> CommandResult:
         payload = {
             "task_id": task_id, "run_id": run_id, "lease_generation": lease_generation,
-            "reason": reason, "owner": owner, "expected_version": expected_version,
+            "reason": reason, "owner": owner, "usage": usage,
+            "expected_version": expected_version,
         }
 
         def action(connection: sqlite3.Connection, principal: Actor) -> CommandResult:
+            input_tokens, output_tokens = _usage_values(usage)
             task = self._task_row(connection, task_id)
             self._version(task, expected_version)
             run, assignment = self._active_run(
                 connection, task_id, run_id, principal, lease_generation
             )
             connection.execute(
-                "UPDATE runs SET status='BLOCKED', finished_at=? WHERE id=?", (_iso(), run_id)
+                """
+                UPDATE runs
+                SET status='BLOCKED', finished_at=?, input_tokens=?, output_tokens=?
+                WHERE id=?
+                """,
+                (_iso(), input_tokens, output_tokens, run_id),
             )
             blocker_id = _id()
             connection.execute(
@@ -2315,15 +2372,17 @@ class BoardService:
         expected_version: int,
         actor: Actor | str,
         idempotency_key: str,
+        usage: dict[str, Any] | None = None,
     ) -> CommandResult:
         payload = {
             "task_id": task_id, "run_id": run_id, "lease_generation": lease_generation,
             "run_status": run_status, "failure_kind": failure_kind,
-            "failure_reason": failure_reason,
+            "failure_reason": failure_reason, "usage": usage,
             "expected_version": expected_version,
         }
 
         def action(connection: sqlite3.Connection, principal: Actor) -> CommandResult:
+            input_tokens, output_tokens = _usage_values(usage)
             task = self._task_row(connection, task_id)
             self._version(task, expected_version)
             run, assignment = self._active_run(
@@ -2332,10 +2391,19 @@ class BoardService:
             connection.execute(
                 """
                 UPDATE runs
-                SET status=?, failure_kind=?, failure_reason=?, finished_at=?
+                SET status=?, failure_kind=?, failure_reason=?, finished_at=?,
+                    input_tokens=?, output_tokens=?
                 WHERE id=?
                 """,
-                (run_status, failure_kind, failure_reason, _iso(), run_id),
+                (
+                    run_status,
+                    failure_kind,
+                    failure_reason,
+                    _iso(),
+                    input_tokens,
+                    output_tokens,
+                    run_id,
+                ),
             )
             self._release(connection, assignment["id"])
             policy = self._assignment_policy_snapshot(assignment)
@@ -2847,6 +2915,11 @@ class BoardService:
                 "UPDATE tasks SET state=?, version=?, updated_at=? WHERE id=?",
                 (state, version, _iso(), task_id),
             )
+            if state is TaskState.DONE:
+                connection.execute(
+                    "UPDATE runs SET completed_at=? WHERE id=?",
+                    (_iso(), run["id"]),
+                )
             self._event(
                 connection, "task", task_id, event, principal,
                 {"review_id": review_id, "reason": reason}, version,
@@ -2916,6 +2989,11 @@ class BoardService:
                 "UPDATE tasks SET state=?, version=?, updated_at=? WHERE id=?",
                 (state, version, _iso(), task_id),
             )
+            if state is TaskState.DONE:
+                connection.execute(
+                    "UPDATE runs SET completed_at=? WHERE id=?",
+                    (_iso(), run["id"]),
+                )
             event = "HUMAN_APPROVAL_RECORDED" if requires_integration else "TASK_DONE"
             self._event(
                 connection,
@@ -3064,8 +3142,8 @@ class BoardService:
                 ),
             )
             connection.execute(
-                "UPDATE runs SET integration_sha=? WHERE id=?",
-                (integrated.commit_sha, run_id),
+                "UPDATE runs SET integration_sha=?, completed_at=? WHERE id=?",
+                (integrated.commit_sha, now, run_id),
             )
             self._release(connection, assignment["id"])
             version = task["version"] + 1
@@ -3886,7 +3964,7 @@ class BoardService:
                 "SELECT * FROM runs WHERE task_id=? ORDER BY attempt DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
-            run_payload = dict(run) if run else None
+            run_payload = _run_projection(run) if run else None
             checkpoints: list[dict[str, Any]] = []
             evidence: list[dict[str, Any]] = []
             review_payload = None
@@ -4047,7 +4125,7 @@ class BoardService:
                 """,
                 tuple(params),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [_run_projection(row) for row in rows]
 
     def config_get(self) -> dict[str, Any] | None:
         with connect(self._path()) as connection:
@@ -4117,7 +4195,7 @@ class BoardService:
                     "SELECT * FROM evidence WHERE run_id=? ORDER BY created_at", (run_id,)
                 )
             ]
-        return {**dict(row), "evidence": evidence}
+        return {**_run_projection(row), "evidence": evidence}
 
     def plan_get(self, plan_id: str, revision: int | None = None) -> dict[str, Any]:
         with connect(self._path()) as connection:

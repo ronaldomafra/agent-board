@@ -16,6 +16,7 @@ import {
   type Evidence,
   type Run,
   type Task,
+  type UsageTotals,
 } from "./api";
 import { ConfigurationView } from "./ConfigurationView";
 import { PlansView } from "./PlansView";
@@ -95,6 +96,22 @@ function formatRelative(value?: string) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `há ${hours} h`;
   return `há ${Math.floor(hours / 24)} d`;
+}
+
+function formatTokens(value?: number | null) {
+  return value === undefined || value === null
+    ? "Não informado"
+    : value.toLocaleString("pt-BR");
+}
+
+function formatDuration(seconds?: number | null) {
+  if (seconds === undefined || seconds === null) return "Não concluída";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  if (hours > 0) return `${hours} h ${minutes} min`;
+  if (minutes > 0) return `${minutes} min ${remainingSeconds} s`;
+  return `${remainingSeconds} s`;
 }
 
 function StatusDot({ status }: { status?: string }) {
@@ -327,17 +344,39 @@ function AgentsView({ agents, onTask }: { agents: Agent[]; onTask: (taskId: stri
   );
 }
 
-function RunsView({ runs, onTask }: { runs: Run[]; onTask: (taskId: string) => void }) {
+function RunsView({
+  runs,
+  usageTotals,
+  onTask,
+}: {
+  runs: Run[];
+  usageTotals?: UsageTotals;
+  onTask: (taskId: string) => void;
+}) {
+  const totals = usageTotals ?? {
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    completed_duration_seconds: 0,
+    reported_runs: 0,
+    completed_runs: 0,
+  };
   return (
     <section className="entity-view" aria-labelledby="runs-title">
       <div className="section-heading">
         <div><p className="eyebrow">Tentativas auditáveis</p><h2 id="runs-title">Execuções</h2></div>
         <span>{runs.length} no snapshot</span>
       </div>
+      <div className="run-usage-summary" aria-label="Totais de uso das execuções exibidas">
+        <div><span>Entrada</span><strong>{formatTokens(totals.input_tokens)}</strong></div>
+        <div><span>Saída</span><strong>{formatTokens(totals.output_tokens)}</strong></div>
+        <div><span>Total</span><strong>{formatTokens(totals.total_tokens)}</strong><small>{totals.reported_runs} runs reportaram tokens</small></div>
+        <div><span>Até DONE</span><strong>{formatDuration(totals.completed_duration_seconds)}</strong><small>{totals.completed_runs} tasks concluídas</small></div>
+      </div>
       {runs.length === 0 ? <EmptyState title="Nenhuma execução registrada" body="Runs ativos e concluídos aparecerão aqui com checkpoint e evidência." /> : (
         <div className="run-table-wrap">
           <table className="run-table">
-            <thead><tr><th>Run</th><th>Task</th><th>Agente</th><th>Estado</th><th>Início</th><th>Último checkpoint</th></tr></thead>
+            <thead><tr><th>Run</th><th>Task</th><th>Agente</th><th>Estado</th><th>Entrada</th><th>Saída</th><th>Total</th><th>Até DONE</th><th>Último checkpoint</th></tr></thead>
             <tbody>
               {runs.map((run) => (
                 <tr key={run.id}>
@@ -345,7 +384,10 @@ function RunsView({ runs, onTask }: { runs: Run[]; onTask: (taskId: string) => v
                   <td>{run.task_id ? <button onClick={() => onTask(run.task_id!)}>{run.task_title || run.task_id}</button> : "—"}</td>
                   <td>{run.agent_id || "—"}</td>
                   <td><span className="run-status"><StatusDot status={run.status} />{run.status || "desconhecido"}</span></td>
-                  <td>{formatRelative(run.started_at)}</td>
+                  <td>{formatTokens(run.input_tokens)}</td>
+                  <td>{formatTokens(run.output_tokens)}</td>
+                  <td>{formatTokens(run.total_tokens)}</td>
+                  <td>{formatDuration(run.duration_seconds)}<small>{run.completed_at ? `Concluída ${formatRelative(run.completed_at)}` : `Início ${formatRelative(run.started_at)}`}</small></td>
                   <td>{run.latest_checkpoint || run.failure_reason || "Sem checkpoint"}</td>
                 </tr>
               ))}
@@ -664,7 +706,7 @@ export function App() {
                 {search && Object.values(filteredColumns).every((tasks) => tasks.length === 0) && <p className="search-empty">Nenhuma task corresponde a “{search}”.</p>}
               </>
             )}
-            {view === "plans" && <PlansView />}
+            {view === "plans" && <PlansView onApproved={refresh} />}
             {view === "tasks" && (
               <TasksView
                 snapshot={snapshot}
@@ -675,7 +717,7 @@ export function App() {
               />
             )}
             {view === "agents" && <AgentsView agents={snapshot.agents} onTask={openTaskById} />}
-            {view === "runs" && <RunsView runs={snapshot.runs} onTask={openTaskById} />}
+            {view === "runs" && <RunsView runs={snapshot.runs} usageTotals={snapshot.usage_totals} onTask={openTaskById} />}
             {view === "config" && <ConfigurationView onApplied={refresh} />}
           </>
         ) : (

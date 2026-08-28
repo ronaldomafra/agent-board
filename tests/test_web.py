@@ -15,8 +15,8 @@ from agentboard.web import create_app
 TOKEN = "runtime-token-" + "x" * 48
 
 
-def bearer() -> dict[str, str]:
-    return {"Authorization": f"Bearer {TOKEN}"}
+def bearer(token: str = TOKEN) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def command(version: int, key: str) -> dict[str, object]:
@@ -34,6 +34,8 @@ def test_packaged_dashboard_is_the_current_server_validated_bundle() -> None:
     assert "/api/v1/tasks/move-intent" in bundle
     assert "Drag é apenas uma intenção" in bundle
     assert "Validar movimento" in bundle
+    assert "Totais de uso das execuções exibidas" in bundle
+    assert "retomado do servidor" in bundle
 
 
 def test_plan_partial_update_preserves_and_replaces_dependencies(
@@ -318,11 +320,14 @@ def test_http_flow_derives_actors_and_replays_board_state(tmp_path: Path) -> Non
         "/api/v1/dashboard/bootstrap", headers=bearer(), json={}
     ).json()["path"]
     assert client.get(bootstrap, follow_redirects=False).status_code == 303
-    csrf = client.cookies.get("agentboard_csrf")
+    csrf = client.cookies.get("agentboard_csrf_test-project")
     authorization = client.post(
         "/api/v1/authorizations",
         headers={"X-AgentBoard-CSRF": csrf},
-        json={"operation": "plan_approve", "resource_id": "PLAN-HTTP"},
+        json={
+            "operation": "plan_approve",
+            "resource_id": "plan:PLAN-HTTP:revision:1:version:0",
+        },
     )
     assert authorization.status_code == 200, authorization.text
     human_capability = authorization.json()["capability_token"]
@@ -478,6 +483,137 @@ def test_write_schema_rejects_caller_supplied_actor(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_claim_replay_after_runtime_restart_returns_a_usable_capability(
+    tmp_path: Path,
+) -> None:
+    service = BoardService(tmp_path / ".agentboard" / "state.db")
+    service.create_plan_draft(
+        "PLAN-REPLAY",
+        "Replay plan",
+        {
+            "tasks": [
+                {
+                    "id": "AB-REPLAY",
+                    "title": "Replay claim",
+                    "objective": "Keep a capability stable across restarts",
+                    "acceptance": ["replay is accepted"],
+                    "tests": ["pytest"],
+                }
+            ]
+        },
+        expected_version=0,
+        actor=Actor("human", frozenset({"human"})),
+        idempotency_key="replay-plan-draft",
+    )
+    service.approve_plan(
+        "PLAN-REPLAY",
+        1,
+        expected_version=0,
+        actor=Actor("human", frozenset({"human"})),
+        idempotency_key="replay-plan-approve",
+    )
+    service.register_agent(
+        "worker-replay",
+        "worker",
+        1,
+        expected_version=0,
+        actor=Actor("orchestrator", frozenset({"orchestrator"})),
+        idempotency_key="replay-agent-register",
+    )
+    capability_secret = "stable-capability-secret-" * 2
+    first_runtime = TestClient(
+        create_app(
+            project_root=tmp_path,
+            api_token="a" * 64,
+            capability_secret=capability_secret,
+            service=service,
+            testing=True,
+        )
+    )
+    first_claim = first_runtime.post(
+        "/api/v1/tasks/claim",
+        headers=bearer("a" * 64),
+        json={
+            **command(0, "replay-claim-key"),
+            "task_id": "AB-REPLAY",
+            "agent_id": "worker-replay",
+        },
+    )
+    assert first_claim.status_code == 200, first_claim.text
+
+    restarted_runtime = TestClient(
+        create_app(
+            project_root=tmp_path,
+            api_token="b" * 64,
+            capability_secret=capability_secret,
+            service=service,
+            testing=True,
+        )
+    )
+    replay = restarted_runtime.post(
+        "/api/v1/tasks/claim",
+        headers=bearer("b" * 64),
+        json={
+            **command(0, "replay-claim-key"),
+            "task_id": "AB-REPLAY",
+            "agent_id": "worker-replay",
+        },
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["data"]["capability_token"] == first_claim.json()["data"][
+        "capability_token"
+    ]
+
+    started = restarted_runtime.post(
+        "/api/v1/runs/start",
+        headers={"X-AgentBoard-Capability": replay.json()["data"]["capability_token"]},
+        json={
+            **command(replay.json()["version"], "replay-run-start"),
+            "task_id": "AB-REPLAY",
+            "assignment_id": replay.json()["data"]["assignment_id"],
+            "lease_generation": replay.json()["data"]["lease_generation"],
+            "codex_thread_id": "replay-thread",
+        },
+    )
+    assert started.status_code == 200, started.text
+
+
+def test_dashboard_sessions_are_namespaced_by_project_key(tmp_path: Path) -> None:
+    first = TestClient(
+        create_app(
+            project_root=tmp_path / "first",
+            api_token="a" * 64,
+            project_key="project-one",
+            testing=True,
+        )
+    )
+    second = TestClient(
+        create_app(
+            project_root=tmp_path / "second",
+            api_token="b" * 64,
+            project_key="project-two",
+            testing=True,
+        )
+    )
+
+    first_bootstrap = first.post(
+        "/api/v1/dashboard/bootstrap", headers=bearer("a" * 64), json={}
+    ).json()["path"]
+    assert first.get(first_bootstrap, follow_redirects=False).status_code == 303
+    second.cookies.update(first.cookies)
+    second_bootstrap = second.post(
+        "/api/v1/dashboard/bootstrap", headers=bearer("b" * 64), json={}
+    ).json()["path"]
+    assert second.get(second_bootstrap, follow_redirects=False).status_code == 303
+
+    assert second.cookies.get("agentboard_session_project-one") is not None
+    assert second.cookies.get("agentboard_csrf_project-one") is not None
+    assert second.cookies.get("agentboard_session_project-two") is not None
+    assert second.cookies.get("agentboard_csrf_project-two") is not None
+    assert second.get("/api/v1/board").status_code == 200
 
 
 def test_runtime_lifecycle_requires_runtime_credential(tmp_path: Path) -> None:

@@ -1,9 +1,12 @@
 # Rodada consolidada de correções
 
-**Status:** análise concluída; nenhuma correção aplicada  
-**Data do inventário:** 2026-07-30  
+**Status:** AB-BUG-001 a AB-BUG-005 implementados; itens de robustez permanecem para rodada posterior
+**Data do inventário:** 2026-07-30
 **Objetivo:** preservar os defeitos encontrados para uma única rodada de implementação,
 validação e atualização do plugin.
+
+**Validação executada:** `uv run pytest`, `uv run ruff check .`, `npm run lint`,
+`npm run build` e `npm test`.
 
 ## Invariantes afetados
 

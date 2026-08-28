@@ -258,6 +258,9 @@ def test_mcp_input_schemas_match_http_constraints_and_nested_dtos() -> None:
         assert evidence_schema["properties"]["kind"]["minLength"] == 1, name
         assert evidence_schema["properties"]["summary"]["maxLength"] == 4000, name
 
+    for name in ("task_block", "task_report_result", "run_fail"):
+        assert "usage" in by_name[name].parameters["properties"]
+
     assert by_name["run_fail"].parameters["properties"]["failure_kind"]["enum"] == [
         "TRANSIENT",
         "LOGICAL",
@@ -398,6 +401,7 @@ def test_nested_mcp_dtos_serialize_to_http_compatible_payloads(monkeypatch: Any)
                 "expected_version": 2,
                 "idempotency_key": "report-result-1",
                 "capability_token": "run-capability",
+                "usage": {"input_tokens": 34, "output_tokens": 21},
             },
             run_middleware=False,
         )
@@ -450,6 +454,7 @@ def test_nested_mcp_dtos_serialize_to_http_compatible_payloads(monkeypatch: Any)
             "metadata": {},
         }
     ]
+    assert result_payload["usage"] == {"input_tokens": 34, "output_tokens": 21}
     assert plan_payload["tasks"][0]["acceptance_criteria"] == [
         "Contract test passes"
     ]

@@ -36,10 +36,19 @@ class HumanAuthorization:
 class LocalAuth:
     """In-memory browser bootstrap/session state anchored by the runtime token."""
 
-    def __init__(self, api_token: str, session_ttl_seconds: int = 8 * 60 * 60) -> None:
+    def __init__(
+        self,
+        api_token: str,
+        session_ttl_seconds: int = 8 * 60 * 60,
+        *,
+        capability_secret: str | None = None,
+    ) -> None:
         if len(api_token) < 32:
             raise ValueError("Runtime API token is too short")
+        if capability_secret is not None and len(capability_secret) < 32:
+            raise ValueError("Capability derivation secret is too short")
         self._api_token = api_token
+        self._capability_secret = capability_secret or api_token
         self._session_ttl = session_ttl_seconds
         self._bootstrap: dict[str, float] = {}
         self._sessions: dict[str, BrowserSession] = {}
@@ -54,6 +63,10 @@ class LocalAuth:
             roles=frozenset({"orchestrator", "admin"}),
             authentication="runtime",
         )
+
+    @property
+    def session_ttl_seconds(self) -> int:
+        return self._session_ttl
 
     def mint_bootstrap(self, ttl_seconds: int = 60) -> str:
         token = secrets.token_urlsafe(32)
@@ -72,7 +85,9 @@ class LocalAuth:
     ) -> str:
         """Derive a replay-stable token without persisting the plaintext capability."""
         material = f"{idempotency_key}\0{operation}\0{actor_id}\0{task_id}".encode()
-        digest = hmac.new(self._api_token.encode(), material, hashlib.sha256).hexdigest()
+        digest = hmac.new(
+            self._capability_secret.encode(), material, hashlib.sha256
+        ).hexdigest()
         return f"abcap_{digest}"
 
     def mint_human_authorization(

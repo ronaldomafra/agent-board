@@ -142,12 +142,18 @@ class Heartbeat(Command):
     checkpoint: str | None = Field(default=None, max_length=2000)
 
 
+class TokenUsageInput(ApiModel):
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+
+
 class TaskBlock(Command):
     task_id: str
     run_id: str
     lease_generation: int = Field(ge=1)
     reason: str = Field(min_length=1, max_length=4000)
     owner: str | None = None
+    usage: TokenUsageInput | None = None
 
 
 class EvidenceInput(ApiModel):
@@ -165,6 +171,7 @@ class ReportResult(Command):
     summary: str = Field(min_length=1, max_length=8000)
     evidence: tuple[EvidenceInput, ...]
     checkpoint_sha: str | None = None
+    usage: TokenUsageInput | None = None
 
 
 class RunFail(Command):
@@ -180,6 +187,7 @@ class RunFail(Command):
         "AUTHORIZATION",
         "CANCELED",
     ] = "LOGICAL"
+    usage: TokenUsageInput | None = None
 
 
 class ReviewClaim(Command):
@@ -438,6 +446,11 @@ class RunOutput(ApiModel):
     start_sha: str | None
     checkpoint_sha: str | None
     integration_sha: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    completed_at: str | None
+    duration_seconds: int | None
     task_title: str | None = None
     agent_id: str | None = None
 
@@ -599,6 +612,15 @@ class BoardProjectOutput(ApiModel):
     path: str
 
 
+class UsageTotalsOutput(ApiModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    completed_duration_seconds: int
+    reported_runs: int
+    completed_runs: int
+
+
 class BoardOutput(ApiModel):
     project: BoardProjectOutput
     hook_protection: HookProtectionOutput
@@ -609,6 +631,7 @@ class BoardOutput(ApiModel):
     attention: BoardAttentionOutput
     agents: list[AgentOutput]
     runs: list[RunOutput]
+    usage_totals: UsageTotalsOutput
     last_event_id: int
     wip: WipOutput
 

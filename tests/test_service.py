@@ -547,6 +547,77 @@ def test_approved_review_releases_wip_and_records_done(tmp_path: Path) -> None:
     assert sequences == list(range(1, len(sequences) + 1))
 
 
+def test_run_usage_is_persisted_and_completion_duration_ends_at_done(
+    tmp_path: Path,
+) -> None:
+    service = approved_service(tmp_path, [task("AB-USAGE")])
+    run_id, generation, version = start(service, "AB-USAGE", "worker-1")
+    with connect(tmp_path / "state.db") as connection:
+        connection.execute(
+            "UPDATE runs SET started_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (run_id,),
+        )
+
+    result = service.task_report_result(
+        "AB-USAGE",
+        run_id,
+        generation,
+        [{"kind": "tests", "summary": "usage contract passed"}],
+        expected_version=version,
+        actor=WORKER_1,
+        idempotency_key="usage-result",
+        usage={"input_tokens": 120, "output_tokens": 45},
+    )
+    before_done = service.run_get(run_id)
+    assert before_done["input_tokens"] == 120
+    assert before_done["output_tokens"] == 45
+    assert before_done["total_tokens"] == 165
+    assert before_done["duration_seconds"] is None
+
+    review_version = start_review(
+        service,
+        "AB-USAGE",
+        result.data["review_id"],
+        result.version,
+        key="usage-review",
+    )
+    service.review_decide(
+        "AB-USAGE",
+        result.data["review_id"],
+        ReviewStatus.APPROVED,
+        "usage accepted",
+        expected_version=review_version,
+        actor=ORCHESTRATOR,
+        idempotency_key="usage-done",
+    )
+
+    completed = service.run_get(run_id)
+    assert completed["completed_at"] is not None
+    assert completed["duration_seconds"] is not None
+    assert completed["duration_seconds"] > 0
+
+
+def test_terminal_run_without_usage_keeps_metrics_unreported(tmp_path: Path) -> None:
+    service = approved_service(tmp_path, [task("AB-NO-USAGE")])
+    run_id, generation, version = start(service, "AB-NO-USAGE", "worker-1")
+
+    service.task_block(
+        "AB-NO-USAGE",
+        run_id,
+        generation,
+        "Waiting for input",
+        expected_version=version,
+        actor=WORKER_1,
+        idempotency_key="no-usage-block",
+    )
+
+    run = service.run_get(run_id)
+    assert run["input_tokens"] is None
+    assert run["output_tokens"] is None
+    assert run["total_tokens"] is None
+    assert run["duration_seconds"] is None
+
+
 def test_scheduler_order_is_deterministic(tmp_path: Path) -> None:
     service = approved_service(
         tmp_path,

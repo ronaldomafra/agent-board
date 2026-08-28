@@ -56,7 +56,7 @@ aggregate version.
 | --- | --- |
 | Pipeline, limits, review policy and project settings | `agentboard.yaml` in Git |
 | Agent profiles | `.codex/agents/*.toml` in Git |
-| Plans, tasks, assignments, leases, runs, reviews and evidence | Project-local SQLite |
+| Plans, tasks, assignments, leases, runs, token usage, reviews and evidence | Project-local SQLite |
 | Transition audit and SSE replay cursor | Append-only SQLite event log |
 | Dashboard selection and filters | Browser only |
 | Runtime metadata, worktrees and database backups | Ignored `.agentboard/` |

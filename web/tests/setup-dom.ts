@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 
 export const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-  url: "http://127.0.0.1/",
+  url: "http://127.0.0.1/?project=local-project",
 });
 
 Object.defineProperties(globalThis, {

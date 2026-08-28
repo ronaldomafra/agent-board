@@ -104,6 +104,7 @@ def test_v2_migration_is_transactional_and_creates_unique_backup(
         ).fetchone()["value"]
     backups = list(tmp_path.glob("state.db.bak-v2-*"))
     assert "failure_reason" in columns
+    assert {"input_tokens", "output_tokens", "completed_at"} <= columns
     assert {"config_revision_id", "policy_snapshot_json"} <= assignment_columns
     assert version == str(SCHEMA_VERSION)
     assert len(backups) == 1

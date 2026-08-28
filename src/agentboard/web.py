@@ -132,6 +132,12 @@ def _actor(principal: Principal | Actor) -> Actor:
     return Actor(principal.actor_id, principal.roles)
 
 
+def _plan_approval_resource(plan_id: str, revision: int, expected_version: int) -> str:
+    """Bind a human approval to exactly the draft revision they inspected."""
+
+    return f"plan:{plan_id}:revision:{revision}:version:{expected_version}"
+
+
 def _error_status(error: Exception) -> int:
     if isinstance(error, NotFoundError):
         return 404
@@ -156,6 +162,7 @@ def create_app(
     *,
     project_root: Path | None = None,
     api_token: str | None = None,
+    capability_secret: str | None = None,
     project_key: str = "local-project",
     service: BoardService | None = None,
     testing: bool = False,
@@ -175,7 +182,10 @@ def create_app(
         lease_ttl_seconds=policy.leases.run_ttl_seconds,
         transient_max_attempts=policy.retries.transient_max_attempts,
     )
-    auth = LocalAuth(api_token or secrets.token_urlsafe(48))
+    auth = LocalAuth(
+        api_token or secrets.token_urlsafe(48),
+        capability_secret=capability_secret,
+    )
     app = FastAPI(title="AgentBoard", version="1", docs_url=None, redoc_url=None)
     app.state.board_service = board_service
     app.state.local_auth = auth
@@ -186,6 +196,14 @@ def create_app(
     runtime_clients_lock = threading.RLock()
     idle_timer: threading.Timer | None = None
     client_watchdog: threading.Timer | None = None
+    cookie_suffix = "".join(
+        character
+        if character.isascii() and (character.isalnum() or character in "-_")
+        else "_"
+        for character in project_key
+    )
+    session_cookie_name = f"agentboard_session_{cookie_suffix}"
+    csrf_cookie_name = f"agentboard_csrf_{cookie_suffix}"
 
     def schedule_idle_shutdown() -> None:
         nonlocal idle_timer
@@ -338,7 +356,7 @@ def create_app(
         authorization = request.headers.get("authorization", "")
         if authorization.startswith("Bearer "):
             return auth.runtime_principal(authorization.removeprefix("Bearer ").strip())
-        session = request.cookies.get("agentboard_session")
+        session = request.cookies.get(session_cookie_name)
         if session:
             return auth.browser_principal(
                 session,
@@ -423,27 +441,36 @@ def create_app(
     def dashboard_bootstrap(request: Request) -> dict[str, str]:
         principal(request, "dashboard_open", write=True)
         token = auth.mint_bootstrap()
-        return {"path": f"/bootstrap?token={urllib.parse.quote(token)}"}
+        return {
+            "path": "/bootstrap?"
+            + urllib.parse.urlencode({"token": token, "project": project_key})
+        }
 
     @app.get("/bootstrap")
-    def consume_bootstrap(token: str) -> RedirectResponse:
+    def consume_bootstrap(token: str, project: str) -> RedirectResponse:
+        if project != project_key:
+            raise AuthenticationError("Dashboard bootstrap belongs to another project")
         session, csrf = auth.consume_bootstrap(token)
-        response = RedirectResponse("/", status_code=303)
+        response = RedirectResponse(
+            f"/?{urllib.parse.urlencode({'project': project_key})}", status_code=303
+        )
         response.set_cookie(
-            "agentboard_session",
+            session_cookie_name,
             session,
             httponly=True,
             secure=False,
             samesite="strict",
             path="/",
+            max_age=auth.session_ttl_seconds,
         )
         response.set_cookie(
-            "agentboard_csrf",
+            csrf_cookie_name,
             csrf,
             httponly=False,
             secure=False,
             samesite="strict",
             path="/",
+            max_age=auth.session_ttl_seconds,
         )
         return response
 
@@ -581,6 +608,26 @@ def create_app(
         active = next((plan for plan in plans if plan["status"] == "ACTIVE"), None)
         agents = to_jsonable(board_service.agent_list())
         runs = to_jsonable(board_service.run_list(limit=200))
+        usage_totals = {
+            "input_tokens": sum(
+                run["input_tokens"] or 0 for run in runs
+            ),
+            "output_tokens": sum(
+                run["output_tokens"] or 0 for run in runs
+            ),
+            "total_tokens": sum(
+                run["total_tokens"] or 0 for run in runs
+            ),
+            "completed_duration_seconds": sum(
+                run["duration_seconds"] or 0 for run in runs
+            ),
+            "reported_runs": sum(
+                run["total_tokens"] is not None for run in runs
+            ),
+            "completed_runs": sum(
+                run["completed_at"] is not None for run in runs
+            ),
+        }
         by_task = {task["id"]: task for task in tasks}
         stale = [
             by_task[run["task_id"]]
@@ -606,6 +653,7 @@ def create_app(
             },
             "agents": agents,
             "runs": runs,
+            "usage_totals": usage_totals,
             "last_event_id": snapshot["last_sequence"],
             "wip": snapshot["wip"],
         }
@@ -742,7 +790,7 @@ def create_app(
             principal(
                 request,
                 "plan_approve",
-                resource_id=plan_id,
+                resource_id=_plan_approval_resource(plan_id, revision, command.expected_version),
                 write=True,
             )
         )
@@ -946,6 +994,11 @@ def create_app(
                 idempotency_key=command.idempotency_key,
                 summary=command.summary,
                 checkpoint_sha=command.checkpoint_sha,
+                usage=(
+                    command.usage.model_dump(mode="json")
+                    if command.usage is not None
+                    else None
+                ),
             )
         )
 
@@ -971,6 +1024,11 @@ def create_app(
                 expected_version=command.expected_version,
                 actor=actor,
                 idempotency_key=command.idempotency_key,
+                usage=(
+                    command.usage.model_dump(mode="json")
+                    if command.usage is not None
+                    else None
+                ),
             )
         )
 
@@ -996,6 +1054,11 @@ def create_app(
                 expected_version=command.expected_version,
                 actor=actor,
                 idempotency_key=command.idempotency_key,
+                usage=(
+                    command.usage.model_dump(mode="json")
+                    if command.usage is not None
+                    else None
+                ),
             )
         )
 

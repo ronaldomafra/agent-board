@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import stat
 import subprocess
+import sys
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,10 +18,13 @@ from agentboard.runtime import (
     RuntimeAlreadyRunningError,
     RuntimeLock,
     RuntimeMetadata,
+    RuntimeUnavailableError,
     read_metadata,
+    read_or_create_capability_secret,
     remove_metadata,
     write_metadata,
 )
+from agentboard.storage import initialize
 
 
 def identity_for(root: Path) -> ProjectIdentity:
@@ -56,6 +62,79 @@ def test_runtime_lock_rejects_live_owner(tmp_path: Path) -> None:
             RuntimeLock(identity, "two").acquire()
     finally:
         first.release()
+
+
+def test_runtime_lock_rejects_an_externally_held_os_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    identity = identity_for(tmp_path)
+    marker = tmp_path / "lock-ready"
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import sys",
+                    "from pathlib import Path",
+                    "from agentboard.runtime import ProjectIdentity, RuntimeLock",
+                    f"root = Path({str(tmp_path)!r})",
+                    "lock = RuntimeLock(ProjectIdentity(root, None, 'project-key'), 'child')",
+                    "lock.acquire()",
+                    f"Path({str(marker)!r}).write_text('ready', encoding='utf-8')",
+                    "sys.stdin.read()",
+                    "lock.release()",
+                ]
+            ),
+        ],
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert marker.exists()
+
+        # The advisory lock, rather than PID inspection, must reject this contender.
+        monkeypatch.setattr("agentboard.runtime._pid_is_alive", lambda _pid: False)
+        with pytest.raises(RuntimeAlreadyRunningError):
+            RuntimeLock(identity, "parent").acquire()
+    finally:
+        if child.stdin is not None:
+            child.stdin.close()
+        child.wait(timeout=10)
+
+
+def test_capability_secret_is_not_recreated_while_a_capability_is_active(
+    tmp_path: Path,
+) -> None:
+    identity = identity_for(tmp_path)
+    database = tmp_path / ".agentboard" / "agentboard.db"
+    initialize(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            INSERT INTO capabilities(
+                token_hash, project_id, actor_id, roles_json, task_id, operations_json,
+                expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "x" * 64,
+                "plan",
+                "worker",
+                "[\"worker\"]",
+                "AB-1",
+                "[\"run_start\"]",
+                (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    with pytest.raises(RuntimeUnavailableError, match="secret is missing"):
+        read_or_create_capability_secret(identity, database_path=database)
 
 
 def test_runtime_lock_recovers_a_confirmed_stale_owner(tmp_path: Path) -> None:

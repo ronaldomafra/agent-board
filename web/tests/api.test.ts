@@ -35,7 +35,7 @@ test("drag sends a versioned server intent and never mutates locally", async () 
   const previousDocument = globalThis.document;
   Object.defineProperty(globalThis, "document", {
     configurable: true,
-    value: { cookie: "agentboard_csrf=csrf-value" },
+    value: { cookie: "agentboard_csrf_local-project=csrf-value" },
   });
   let requestBody: Record<string, unknown> | undefined;
   let requestHeaders: HeadersInit | undefined;

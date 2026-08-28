@@ -31,6 +31,7 @@ from agentboard.schemas import (
     RunListOutput,
     TaskDetailOutput,
     TaskListOutput,
+    TokenUsageInput,
 )
 
 mcp = FastMCP("AgentBoard")
@@ -529,6 +530,7 @@ def task_block(
     idempotency_key: IdempotencyKey,
     capability_token: str,
     owner: str | None = None,
+    usage: TokenUsageInput | None = None,
 ) -> CommandResultOutput:
     """Record a blocker, end the run and release its WIP/file lease."""
     return _command_output(
@@ -540,6 +542,7 @@ def task_block(
                 "lease_generation": lease_generation,
                 "reason": reason,
                 "owner": owner,
+                "usage": usage.model_dump(mode="json") if usage else None,
                 "expected_version": expected_version,
                 "idempotency_key": idempotency_key,
             },
@@ -559,6 +562,7 @@ def task_report_result(
     idempotency_key: IdempotencyKey,
     capability_token: str,
     checkpoint_sha: str | None = None,
+    usage: TokenUsageInput | None = None,
 ) -> CommandResultOutput:
     """Submit evidence and move owned work into verification."""
     return _command_output(
@@ -571,6 +575,7 @@ def task_report_result(
                 "summary": summary,
                 "evidence": _dto_payloads(evidence),
                 "checkpoint_sha": checkpoint_sha,
+                "usage": usage.model_dump(mode="json") if usage else None,
                 "expected_version": expected_version,
                 "idempotency_key": idempotency_key,
             },
@@ -589,6 +594,7 @@ def run_fail(
     idempotency_key: IdempotencyKey,
     capability_token: str,
     failure_kind: FailureKind = "LOGICAL",
+    usage: TokenUsageInput | None = None,
 ) -> CommandResultOutput:
     """Fail an owned run and release its operational lease."""
     return _command_output(
@@ -600,6 +606,7 @@ def run_fail(
                 "lease_generation": lease_generation,
                 "reason": reason,
                 "failure_kind": failure_kind,
+                "usage": usage.model_dump(mode="json") if usage else None,
                 "expected_version": expected_version,
                 "idempotency_key": idempotency_key,
             },

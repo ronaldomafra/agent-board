@@ -228,8 +228,9 @@ agentboard init --project .
 agentboard validate-config --project .
 ```
 
-Isso cria `agentboard.yaml`, que contém os limites, perfis, políticas de revisão, leases e opções de
-Git do projeto.
+Isso cria, sem substituir arquivos existentes, `agentboard.yaml`, um `AGENTS.md` mínimo, os perfis
+`.codex/agents/agentboard_{orchestrator,worker,reviewer}.toml` e a entrada local `.agentboard/` no
+`.gitignore`. O comando informa separadamente os itens criados, reutilizados e já ignorados.
 
 Se o projeto não utilizar Git, altere a configuração gerada para:
 
@@ -255,6 +256,24 @@ agentboard dashboard --project .
 O comando gera uma URL local de uso único. Não copie URLs de bootstrap, tokens ou arquivos de
 `.agentboard/` para logs, commits ou tickets.
 
+### Métricas de execução
+
+Ao encerrar uma run por `task_report_result`, `run_fail` ou `task_block`, o agente pode informar
+os totais reais da plataforma que o executou:
+
+```json
+{
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 340
+  }
+}
+```
+
+Os valores são opcionais, ficam associados à tentativa auditável e aparecem na tela
+**Execuções**. A duração é calculada de `run_start` até a task alcançar `DONE`, incluindo revisão
+e integração local quando aplicáveis.
+
 Para uma primeira experiência pronta, consulte o projeto
 [Loja Modelo](examples/loja-exemplo/README.md).
 
@@ -277,7 +296,7 @@ agentboard mcp                         Inicia a ponte MCP por stdio
 agentboard runtime --project .         Inicia o runtime local
 agentboard dashboard --project .       Abre o dashboard autenticado
 agentboard status --project .          Consulta o runtime
-agentboard init --project .            Cria agentboard.yaml
+agentboard init --project .            Cria o scaffold não destrutivo do AgentBoard
 agentboard validate-config --project . Valida agentboard.yaml
 agentboard codex-hook --self-test      Testa o hook do plugin
 ```

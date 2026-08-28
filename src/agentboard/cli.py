@@ -7,8 +7,50 @@ import secrets
 import sys
 import threading
 import time
+import tomllib
 import webbrowser
 from pathlib import Path
+
+_SCAFFOLD_CONTENT = {
+    "AGENTS.md": '''# AgentBoard project instructions
+
+Read `agentboard.yaml`, this file, and the relevant profile under `.codex/agents/`
+before coordinating or performing work. Treat this repository's versioned files as
+policy and AgentBoard's `.agentboard/` directory as local operational state.
+
+Only the AgentBoard domain service may transition tasks, evaluate WIP, or acquire
+leases. Record actor, expected version, idempotency key, tests, and acceptance
+evidence for every state-changing operation.
+''',
+    ".codex/agents/agentboard_orchestrator.toml": '''name = "agentboard_orchestrator"
+description = "Coordinates AgentBoard work for this project."
+model_reasoning_effort = "high"
+developer_instructions = """
+Read AGENTS.md, agentboard.yaml and the relevant agent profile before planning.
+Coordinate tasks, dependencies and evidence through AgentBoard tools. Do not bypass
+the domain service or edit runtime state directly.
+"""
+''',
+    ".codex/agents/agentboard_worker.toml": '''name = "agentboard_worker"
+description = "Implements one leased AgentBoard task for this project."
+model_reasoning_effort = "medium"
+developer_instructions = """
+Read AGENTS.md, agentboard.yaml and the task contract before editing. Work only
+within the assigned lease, preserve unrelated changes, and report test plus
+acceptance evidence through AgentBoard.
+"""
+''',
+    ".codex/agents/agentboard_reviewer.toml": '''name = "agentboard_reviewer"
+description = "Independently reviews AgentBoard task evidence for this project."
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Read AGENTS.md, agentboard.yaml and the task evidence before deciding. Review
+independently, do not alter the worker's files, and record concrete findings and
+the review decision through AgentBoard.
+"""
+''',
+}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -41,7 +83,9 @@ def _parser() -> argparse.ArgumentParser:
     status = subcommands.add_parser("status", help="Inspect the local runtime.")
     status.add_argument("--project", type=Path, default=Path.cwd())
 
-    init = subcommands.add_parser("init", help="Create an agentboard.yaml draft.")
+    init = subcommands.add_parser(
+        "init", help="Create the non-destructive AgentBoard scaffold."
+    )
     init.add_argument("--project", type=Path, default=Path.cwd())
     init.add_argument("--name")
 
@@ -55,12 +99,15 @@ def _parser() -> argparse.ArgumentParser:
 def _runtime(project: Path, port: int) -> int:
     import uvicorn
 
+    from agentboard.config import default_config, load_config
     from agentboard.domain import Actor, DomainError
     from agentboard.runtime import (
         RuntimeAlreadyRunningError,
         RuntimeLock,
         RuntimeMetadata,
+        RuntimeUnavailableError,
         project_identity,
+        read_or_create_capability_secret,
         remove_metadata,
         write_metadata,
     )
@@ -75,6 +122,17 @@ def _runtime(project: Path, port: int) -> int:
         print(str(exc), file=sys.stderr)
         return 0
     api_token = secrets.token_urlsafe(48)
+    policy_path = identity.root / "agentboard.yaml"
+    policy = load_config(policy_path) if policy_path.is_file() else default_config(identity.root.name)
+    try:
+        capability_secret = read_or_create_capability_secret(
+            identity,
+            database_path=identity.root / policy.paths.database,
+        )
+    except RuntimeUnavailableError as exc:
+        lock.release()
+        print(str(exc), file=sys.stderr)
+        return 1
     selected_port = port
     if not selected_port:
         from agentboard.runtime import _free_loopback_port
@@ -98,6 +156,7 @@ def _runtime(project: Path, port: int) -> int:
         app = create_app(
             project_root=identity.root,
             api_token=api_token,
+            capability_secret=capability_secret,
             project_key=identity.key,
         )
         server = uvicorn.Server(
@@ -184,24 +243,64 @@ def _status(project: Path) -> int:
 def _init(project: Path, name: str | None) -> int:
     import yaml
 
-    from agentboard.config import default_config, find_project_root
+    from agentboard.config import default_config, find_project_root, load_config
 
     root = find_project_root(project)
     target = root / "agentboard.yaml"
+    created: list[Path] = []
+    reused: list[Path] = []
+    ignored: list[Path] = []
     if target.exists():
-        print(f"Configuration already exists: {target}", file=sys.stderr)
-        return 2
-    config = default_config(name or root.name)
-    target.write_text(
-        yaml.safe_dump(
-            config.model_dump(mode="json"),
-            sort_keys=False,
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
-        newline="\n",
-    )
-    print(target)
+        reused.append(target)
+    else:
+        config = default_config(name or root.name)
+        target.write_text(
+            yaml.safe_dump(
+                config.model_dump(mode="json"),
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+            newline="\n",
+        )
+        load_config(target)
+        created.append(target)
+
+    for relative_path, content in _SCAFFOLD_CONTENT.items():
+        scaffold_path = root / relative_path
+        if scaffold_path.exists():
+            reused.append(scaffold_path)
+            continue
+        scaffold_path.parent.mkdir(parents=True, exist_ok=True)
+        scaffold_path.write_text(content, encoding="utf-8", newline="\n")
+        if scaffold_path.suffix == ".toml":
+            tomllib.loads(scaffold_path.read_text(encoding="utf-8"))
+        created.append(scaffold_path)
+
+    gitignore = root / ".gitignore"
+    if gitignore.exists():
+        existing = gitignore.read_text(encoding="utf-8")
+        if any(
+            line.strip() in {".agentboard", ".agentboard/"}
+            for line in existing.splitlines()
+        ):
+            ignored.append(gitignore)
+        else:
+            separator = "" if not existing or existing.endswith("\n") else "\n"
+            gitignore.write_text(
+                f"{existing}{separator}.agentboard/\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            created.append(gitignore)
+    else:
+        gitignore.write_text(".agentboard/\n", encoding="utf-8", newline="\n")
+        created.append(gitignore)
+
+    for label, paths in (("created", created), ("reused", reused), ("ignored", ignored)):
+        print(f"{label}:")
+        for path in paths:
+            print(f"  {path.relative_to(root)}")
     return 0
 
 

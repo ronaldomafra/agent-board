@@ -13,8 +13,10 @@ simulate a claim in chat or mark work complete without the corresponding AgentBo
 
 ## Open and plan
 
-1. Read `AGENTS.md`, `DEVELOPMENT_GUIDE.md`, `docs/ARCHITECTURE.md`, the active
-   `agentboard.yaml` and the relevant profile in `.codex/agents/`.
+1. Read `AGENTS.md`, the active `agentboard.yaml` and the relevant profile in
+   `.codex/agents/`. Then read only the project documents explicitly referenced by that
+   project's `AGENTS.md`. `DEVELOPMENT_GUIDE.md` and `docs/ARCHITECTURE.md` are optional
+   project documents, not prerequisites for every AgentBoard consumer.
 2. Call `project_open`, then `board_snapshot`, `plan_get` and `config_get`.
 3. If requirements are not represented by an approved revision, use
    `plan_draft_create` or `plan_revision_create`, update and validate the draft, present its
@@ -71,4 +73,3 @@ Return the task ID, outcome, changed files, tests, acceptance evidence, risks an
 recommendation. `DONE` requires recorded evidence, an approved review and local integration when
 the evidence profile requires it. Treat the bundled hook as defense in depth only; the domain
 service, capabilities and local Git adapter remain authoritative.
-

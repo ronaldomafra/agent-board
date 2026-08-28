@@ -5,12 +5,14 @@ import json
 import os
 import secrets
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Self
 
@@ -84,7 +86,7 @@ def project_identity(start: Path) -> ProjectIdentity:
 
 
 class RuntimeLock:
-    """Exclusive project runtime ownership with conservative stale-lock recovery."""
+    """Exclusive project runtime ownership backed by an OS-held advisory lock."""
 
     def __init__(self, identity: ProjectIdentity, nonce: str) -> None:
         self.identity = identity
@@ -92,6 +94,7 @@ class RuntimeLock:
         self.runtime_dir = identity.root / ".agentboard"
         self.path = self.runtime_dir / "runtime.lock"
         self.acquired = False
+        self._descriptor: int | None = None
 
     def acquire(self) -> None:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -101,62 +104,85 @@ class RuntimeLock:
             separators=(",", ":"),
         )
         try:
-            self._create(payload)
+            descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
-            existing = self._read()
-            pid = int(existing.get("pid", 0))
-            created_at = float(existing.get("created_at", 0))
-            age = time.time() - created_at
-            pid_alive = _pid_is_alive(pid)
-            pid_reused = pid_alive and _pid_started_after_lock(pid, created_at)
-            if age < _RUNTIME_STARTUP_GRACE_SECONDS or (
-                pid_alive and not pid_reused
-            ):
+            descriptor = os.open(self.path, os.O_RDWR)
+        try:
+            _secure_runtime_path(self.path, directory=False)
+            if os.name == "nt" and os.fstat(descriptor).st_size == 0:
+                # ``msvcrt.locking`` cannot lock beyond EOF. This placeholder is
+                # replaced by the JSON owner record while holding the lock.
+                os.write(descriptor, b"\0")
+                os.fsync(descriptor)
+            if not _try_acquire_os_lock(descriptor):
                 raise RuntimeAlreadyRunningError(
                     f"AgentBoard runtime already owns project {self.identity.key}"
-                ) from None
-            stale = self.runtime_dir / f"runtime.lock.stale.{secrets.token_hex(6)}"
-            try:
-                os.replace(self.path, stale)
-                self._create(payload)
-            except (FileNotFoundError, FileExistsError, PermissionError) as exc:
-                raise RuntimeAlreadyRunningError("Runtime lock changed during recovery") from exc
-        self.acquired = True
+                )
+            self._descriptor = descriptor
+            existing = self._read_descriptor()
+            if existing is not None:
+                pid = int(existing.get("pid", 0))
+                created_at = float(existing.get("created_at", 0))
+                pid_alive = _pid_is_alive(pid)
+                pid_reused = pid_alive and _pid_started_after_lock(pid, created_at)
+                if pid_alive and not pid_reused:
+                    raise RuntimeAlreadyRunningError(
+                        f"AgentBoard runtime already owns project {self.identity.key}"
+                    )
+            self._write_descriptor(payload)
+            self.acquired = True
+        except Exception:
+            if self._descriptor is not None:
+                _release_os_lock(self._descriptor)
+                self._descriptor = None
+            os.close(descriptor)
+            raise
 
     def release(self) -> None:
         if not self.acquired:
             return
+        remove_path = False
         try:
-            existing = self._read()
-            if existing.get("nonce") == self.nonce:
-                self.path.unlink(missing_ok=True)
+            existing = self._read_descriptor()
+            if existing is not None and existing.get("nonce") == self.nonce:
+                remove_path = True
         finally:
+            if self._descriptor is not None:
+                _release_os_lock(self._descriptor)
+                os.close(self._descriptor)
+                self._descriptor = None
             self.acquired = False
-
-    def _create(self, payload: str) -> None:
-        descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        os.close(descriptor)
-        descriptor = -1
-        try:
-            _secure_runtime_path(self.path, directory=False)
-            descriptor = os.open(self.path, os.O_WRONLY | os.O_TRUNC)
-            os.write(descriptor, payload.encode("utf-8"))
-            os.fsync(descriptor)
-        except Exception:
+        if remove_path:
             self.path.unlink(missing_ok=True)
-            raise
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
 
-    def _read(self) -> dict[str, Any]:
+    def _read_descriptor(self) -> dict[str, Any] | None:
+        if self._descriptor is None:
+            raise RuntimeAlreadyRunningError("Runtime lock is not held")
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            os.lseek(self._descriptor, 0, os.SEEK_SET)
+            raw = os.read(self._descriptor, 4096)
+        except OSError as exc:
             raise RuntimeAlreadyRunningError("Runtime lock is unreadable") from exc
+        if not raw or raw == b"\0":
+            return None
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeAlreadyRunningError("Runtime lock is invalid") from exc
         if not isinstance(value, dict):
             raise RuntimeAlreadyRunningError("Runtime lock is invalid")
         return value
+
+    def _write_descriptor(self, payload: str) -> None:
+        if self._descriptor is None:
+            raise RuntimeAlreadyRunningError("Runtime lock is not held")
+        try:
+            os.lseek(self._descriptor, 0, os.SEEK_SET)
+            os.ftruncate(self._descriptor, 0)
+            os.write(self._descriptor, payload.encode("utf-8"))
+            os.fsync(self._descriptor)
+        except OSError as exc:
+            raise RuntimeUnavailableError("Could not persist runtime lock") from exc
 
     def __enter__(self) -> Self:
         self.acquire()
@@ -166,8 +192,97 @@ class RuntimeLock:
         self.release()
 
 
+def _try_acquire_os_lock(descriptor: int) -> bool:
+    """Try to acquire the single-byte advisory lock without waiting."""
+
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (BlockingIOError, OSError):
+        return False
+    return True
+
+
+def _release_os_lock(descriptor: int) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    except OSError:
+        # Process exit releases an advisory lock; release is best-effort cleanup.
+        return
+
+
 def metadata_path(identity: ProjectIdentity) -> Path:
     return identity.root / ".agentboard" / "runtime.json"
+
+
+def capability_secret_path(identity: ProjectIdentity) -> Path:
+    return identity.root / ".agentboard" / "capability.key"
+
+
+def read_or_create_capability_secret(
+    identity: ProjectIdentity, *, database_path: Path | None = None
+) -> str:
+    """Return the project-local HMAC secret without exposing it through metadata."""
+
+    runtime_dir = identity.root / ".agentboard"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    _secure_runtime_path(runtime_dir, directory=True)
+    path = capability_secret_path(identity)
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        if database_path is not None and _has_active_capabilities(database_path):
+            raise RuntimeUnavailableError(
+                "Capability derivation secret is missing while active reservations exist; "
+                "wait for expiry and create a new reservation"
+            )
+        value = secrets.token_urlsafe(48)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            _secure_runtime_path(path, directory=False)
+            os.write(descriptor, f"{value}\n".encode())
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise RuntimeUnavailableError("Could not read capability derivation secret") from exc
+    if len(value) < 32:
+        raise RuntimeUnavailableError("Capability derivation secret is invalid")
+    _secure_runtime_path(path, directory=False)
+    return value
+
+
+def _has_active_capabilities(database_path: Path) -> bool:
+    if not database_path.is_file():
+        return False
+    try:
+        with sqlite3.connect(database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM capabilities
+                WHERE revoked_at IS NULL AND expires_at > ?
+                LIMIT 1
+                """,
+                (datetime.now(UTC).isoformat(),),
+            ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
 
 
 def write_metadata(identity: ProjectIdentity, metadata: RuntimeMetadata) -> None:
@@ -311,6 +426,8 @@ def _pid_is_alive(pid: int) -> bool:
         return False
     if pid == os.getpid():
         return True
+    if os.name == "nt":
+        return _windows_pid_is_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -320,6 +437,34 @@ def _pid_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _windows_pid_is_alive(pid: int) -> bool:
+    """Check a Windows PID without relying on ``os.kill(pid, 0)`` semantics."""
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        process = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not process:
+            return False
+        try:
+            status = kernel32.WaitForSingleObject(process, 0)
+        finally:
+            kernel32.CloseHandle(process)
+        # WAIT_TIMEOUT means an open process has not terminated. Be conservative for
+        # an unexpected wait failure: another runtime must not be displaced.
+        return status in (0x00000102, 0xFFFFFFFF)
+    except (AttributeError, OSError, ValueError):
+        return False
 
 
 def _pid_started_after_lock(pid: int, lock_created_at: float) -> bool:

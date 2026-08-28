@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 @contextmanager
@@ -179,7 +179,10 @@ CREATE TABLE IF NOT EXISTS runs (
     branch_ref TEXT,
     start_sha TEXT,
     checkpoint_sha TEXT,
-    integration_sha TEXT
+    integration_sha TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    completed_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_running_run_per_task
 ON runs(task_id) WHERE status = 'RUNNING';
@@ -372,6 +375,14 @@ def initialize(database_path: Path) -> None:
         )
     if old_version in {1, 2, 3, 4, 5, 6, 7}:
         upgrades.append("ALTER TABLE runs ADD COLUMN result_summary TEXT;")
+    if old_version in {1, 2, 3, 4, 5, 6, 7, 8}:
+        upgrades.append(
+            """
+            ALTER TABLE runs ADD COLUMN input_tokens INTEGER;
+            ALTER TABLE runs ADD COLUMN output_tokens INTEGER;
+            ALTER TABLE runs ADD COLUMN completed_at TEXT;
+            """
+        )
     upgrade = "\n".join(upgrades)
     migration = (
         "BEGIN IMMEDIATE;\n"
